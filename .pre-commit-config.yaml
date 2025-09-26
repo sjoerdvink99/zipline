@@ -1,0 +1,49 @@
+# Pre-commit hooks for GraphBridge
+# Install with: pip install pre-commit && pre-commit install
+
+repos:
+  # Ruff linting and formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      # Run the linter
+      - id: ruff
+        name: ruff-lint
+        description: "Run ruff linter on backend code"
+        files: ^backend/src/.*\.py$
+        args: [--fix, --unsafe-fixes]
+      # Run the formatter
+      - id: ruff-format
+        name: ruff-format
+        description: "Run ruff formatter on backend code"
+        files: ^backend/src/.*\.py$
+
+  # Backend tests
+  - repo: local
+    hooks:
+      - id: backend-tests
+        name: backend-tests
+        description: "Run backend tests to ensure formalism correctness"
+        entry: bash -c 'cd backend && .venv/bin/python -m pytest tests/ --tb=short -q'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^frontend/
+      - id: end-of-file-fixer
+        exclude: ^frontend/
+      - id: check-yaml
+        exclude: ^frontend/
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+
+# Configuration
+fail_fast: false
+default_stages: [pre-commit]
