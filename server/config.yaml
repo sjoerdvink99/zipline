@@ -1,0 +1,10 @@
+features:
+  stabilization:
+    percentile_clip_low: 1
+    percentile_clip_high: 99
+
+  heavy_tailed:
+    node: ["edge_amount_sum", "triangles", "wedges", "chain_3", "clique_4", "betweenness", "pagerank", "local_reach"]
+    edge: ["amount", "common_neighbors"]
+    path: ["edge_amount_mean", "edge_amount_p90", "triangles_sum"]
+    subgraph: ["amount_mean", "amount_p90", "cut_ratio", "triangles", "subgraph_triangles", "subgraph_cliques_4"]

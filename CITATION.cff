@@ -1,0 +1,20 @@
+cff-version: 1.0.0
+title: GraphBridge
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Vink
+    given-names: Sjoerd
+  - family-names: Li
+    given-names: Suyang
+  - family-names: Montambault
+    given-names: Brian
+  - family-names: Li
+    given-names: Mingwei
+repository-code: "https://github.com/sjoerdvink99/graphbridge"
+abstract: >-
+  Iterative Predicate Induction for Interactive Graph Pattern Discovery
+keywords:
+  - python
+  - graphs
+license: MIT

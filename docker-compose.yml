@@ -1,0 +1,6 @@
+services:
+  graphbridge:
+    build: .
+    ports:
+      - "5178:5178"
+    restart: unless-stopped

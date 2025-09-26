@@ -1,0 +1,31 @@
+# Dependencies
+frontend/node_modules
+server/.venv
+
+# Build artifacts
+frontend/dist
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Misc
+*.md
+*.log
+.DS_Store

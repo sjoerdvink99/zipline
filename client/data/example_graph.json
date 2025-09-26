@@ -1,0 +1,14 @@
+{
+  "nodes": [
+    {"id": "A", "label": "node", "name": "Node A"},
+    {"id": "B", "label": "node", "name": "Node B"},
+    {"id": "C", "label": "node", "name": "Node C"},
+    {"id": "D", "label": "node", "name": "Node D"}
+  ],
+  "links": [
+    {"source": "A", "target": "B", "label": "connects"},
+    {"source": "B", "target": "C", "label": "connects"},
+    {"source": "C", "target": "D", "label": "connects"},
+    {"source": "D", "target": "A", "label": "connects"}
+  ]
+}

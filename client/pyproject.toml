@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "graphbridge"
+version = "0.1.0"
+description = "Python client for GraphBridge visual graph analysis"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Sjoerd Vink" }
+]
+readme = "README.md"
+keywords = ["graph", "visualization", "networkx", "analysis", "patterns"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+dependencies = [
+    "networkx>=3.0",
+    "numpy>=1.24",
+    "requests>=2.28",
+]
+
+[project.urls]
+Homepage = "https://github.com/sjoerdvink/graphbridge"
+Repository = "https://github.com/sjoerdvink/graphbridge"
+
+[project.optional-dependencies]
+examples = [
+    "jupyter",
+    "matplotlib",
+]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["graphbridge"]
+
+[tool.hatch.build.targets.sdist]
+include = ["graphbridge"]

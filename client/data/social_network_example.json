@@ -1,0 +1,19 @@
+{
+  "nodes": [
+    {"id": "Alice", "label": "person", "name": "Alice", "age": 28, "followers": 150},
+    {"id": "Bob", "label": "person", "name": "Bob", "age": 32, "followers": 89},
+    {"id": "Charlie", "label": "person", "name": "Charlie", "age": 25, "followers": 210},
+    {"id": "Diana", "label": "person", "name": "Diana", "age": 30, "followers": 178},
+    {"id": "Eve", "label": "person", "name": "Eve", "age": 27, "followers": 95},
+    {"id": "Frank", "label": "person", "name": "Frank", "age": 35, "followers": 245}
+  ],
+  "links": [
+    {"source": "Alice", "target": "Bob", "label": "follows"},
+    {"source": "Alice", "target": "Charlie", "label": "follows"},
+    {"source": "Bob", "target": "Diana", "label": "follows"},
+    {"source": "Charlie", "target": "Eve", "label": "follows"},
+    {"source": "Diana", "target": "Frank", "label": "follows"},
+    {"source": "Eve", "target": "Alice", "label": "follows"},
+    {"source": "Frank", "target": "Charlie", "label": "follows"}
+  ]
+}

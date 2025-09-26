@@ -1,0 +1,20 @@
+{
+  "nodes": [
+    {"id": "Supplier_A", "label": "supplier", "name": "Supplier A", "capacity": 1000},
+    {"id": "Supplier_B", "label": "supplier", "name": "Supplier B", "capacity": 800},
+    {"id": "Manufacturer_1", "label": "manufacturer", "name": "Manufacturer 1", "capacity": 500},
+    {"id": "Manufacturer_2", "label": "manufacturer", "name": "Manufacturer 2", "capacity": 600},
+    {"id": "Distributor_X", "label": "distributor", "name": "Distributor X", "capacity": 700},
+    {"id": "Retailer_1", "label": "retailer", "name": "Retailer 1", "capacity": 300},
+    {"id": "Retailer_2", "label": "retailer", "name": "Retailer 2", "capacity": 250}
+  ],
+  "links": [
+    {"source": "Supplier_A", "target": "Manufacturer_1", "label": "supplies", "amount": 400},
+    {"source": "Supplier_B", "target": "Manufacturer_1", "label": "supplies", "amount": 300},
+    {"source": "Supplier_A", "target": "Manufacturer_2", "label": "supplies", "amount": 500},
+    {"source": "Manufacturer_1", "target": "Distributor_X", "label": "produces", "amount": 450},
+    {"source": "Manufacturer_2", "target": "Distributor_X", "label": "produces", "amount": 400},
+    {"source": "Distributor_X", "target": "Retailer_1", "label": "distributes", "amount": 300},
+    {"source": "Distributor_X", "target": "Retailer_2", "label": "distributes", "amount": 250}
+  ]
+}
