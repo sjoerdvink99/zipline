@@ -11,12 +11,13 @@ repos:
         name: ruff-lint
         description: "Run ruff linter on backend code"
         files: ^backend/src/.*\.py$
-        args: [--fix, --unsafe-fixes]
+        args: [--fix, --unsafe-fixes, --cache-dir=backend/.ruff_cache]
       # Run the formatter
       - id: ruff-format
         name: ruff-format
         description: "Run ruff formatter on backend code"
         files: ^backend/src/.*\.py$
+        args: [--cache-dir=backend/.ruff_cache]
 
   # Backend tests
   - repo: local
