@@ -1,5 +1,5 @@
-cff-version: 1.0.0
-title: GraphBridge
+cff-version: 1.2.0
+title: ZipLine
 message: "If you use this software, please cite it as below."
 type: software
 authors:
@@ -9,12 +9,22 @@ authors:
     given-names: Suyang
   - family-names: Montambault
     given-names: Brian
+  - family-names: Behrisch
+    given-names: Michael
   - family-names: Li
     given-names: Mingwei
-repository-code: "https://github.com/sjoerdvink99/graphbridge"
+  - family-names: Chang
+    given-names: Remco
+repository-code: "https://github.com/sjoerdvink99/zipline"
 abstract: >-
-  Iterative Predicate Induction for Interactive Graph Pattern Discovery
+  ZipLine: A visual analytics system for interactive graph explanation
+  through iterative predicate induction. Analysts select nodes, receive
+  formal first-order logic explanations, refine selections, and re-explain
+  to discover complex patterns in multivariate graphs.
 keywords:
-  - python
-  - graphs
+  - visual-analytics
+  - graph-analysis
+  - first-order-logic
+  - predicate-learning
+  - interactive-explanation
 license: MIT

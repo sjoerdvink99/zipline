@@ -72,7 +72,7 @@ export type ConstraintItem = AttributeConstraintItem | TopologyConstraintItem | 
 export interface NeighborhoodConstraint {
   id: string;
   targetPredicateIds: string[];
-  targetType?: 'predicates' | 'constraints' | 'all_predicates'; // New: specify what this constraint applies to
+  targetType?: 'predicates' | 'constraints' | 'all_predicates';
   quantifier: 'ALL' | 'SOME' | 'EXACTLY' | 'AT_LEAST' | 'AT_MOST';
   count?: number;
   relation: 'neighbors' | 'k_hop' | 'connected_components';
@@ -81,7 +81,7 @@ export interface NeighborhoodConstraint {
   resultMode: 'primary_only' | 'primary_and_projected';
   projectionVariable?: string;
   level: number;
-  parentConstraintId?: string; // New: for nested constraints
+  parentConstraintId?: string;
   nestedConstraints?: NeighborhoodConstraint[];
 }
 
@@ -108,7 +108,7 @@ export type SetOperation = 'and' | 'or' | 'not';
 
 export type AttributeType = 'boolean' | 'numeric' | 'categorical' | 'array' | 'temporal';
 
-export type SelectionSource = 'topology' | 'attribute' | 'predicate_bridge' | 'umap' | 'schema';
+export type SelectionSource = 'topology' | 'attribute' | 'predicate_bridge' | 'schema';
 
 export interface LogicalExpression {
   type: 'predicate' | 'compound';

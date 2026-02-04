@@ -1,35 +1,43 @@
-# Pre-commit hooks for GraphBridge
-# Install with: pip install pre-commit && pre-commit install
+# Pre-commit hooks for ZipLine
+# Install with: pre-commit install
 
 repos:
-  # Ruff linting and formatting
+  # Ruff linting and formatting (backend)
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.4
     hooks:
-      # Run the linter
       - id: ruff
         name: ruff-lint
-        description: "Run ruff linter on backend code"
-        files: ^backend/src/.*\.py$
+        files: ^backend/.*\.py$
         args: [--fix, --unsafe-fixes, --cache-dir=backend/.ruff_cache]
-      # Run the formatter
       - id: ruff-format
         name: ruff-format
-        description: "Run ruff formatter on backend code"
-        files: ^backend/src/.*\.py$
+        files: ^backend/.*\.py$
         args: [--cache-dir=backend/.ruff_cache]
 
-  # Backend tests
+  # Local hooks
   - repo: local
     hooks:
       - id: backend-tests
         name: backend-tests
-        description: "Run backend tests to ensure formalism correctness"
         entry: bash -c 'cd backend && .venv/bin/python -m pytest tests/ --tb=short -q'
         language: system
         files: ^backend/.*\.py$
         pass_filenames: false
-        stages: [pre-commit]
+
+      - id: frontend-typecheck
+        name: frontend-typecheck
+        entry: bash -c 'cd frontend && bun run typecheck'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: frontend-lint
+        name: frontend-lint
+        entry: bash -c 'cd frontend && bun run lint'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
 
   # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -42,9 +50,8 @@ repos:
       - id: check-yaml
         exclude: ^frontend/
       - id: check-added-large-files
-        args: ['--maxkb=1000']
+        args: ["--maxkb=1000"]
       - id: check-merge-conflict
 
-# Configuration
 fail_fast: false
 default_stages: [pre-commit]

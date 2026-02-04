@@ -1,27 +1,41 @@
-import type { MemoryInfo } from '../types';
+import type { MemoryInfo } from "../types";
+
+interface PerformanceMemory {
+  usedJSHeapSize: number;
+  totalJSHeapSize: number;
+  jsHeapSizeLimit: number;
+}
+
+interface PerformanceWithMemory extends Performance {
+  memory?: PerformanceMemory;
+}
 
 export class MemoryMonitor {
   private intervalId: number | null = null;
   private callbacks: Set<(usage: MemoryInfo) => void> = new Set();
 
-  startMonitoring(callback: (usage: MemoryInfo) => void, interval: number = 5000): void {
+  startMonitoring(
+    callback: (usage: MemoryInfo) => void,
+    interval: number = 5000,
+  ): void {
     this.callbacks.add(callback);
 
     if (this.intervalId === null) {
       this.intervalId = window.setInterval(() => {
-        if ('memory' in performance) {
-          const memory = (performance as any).memory;
+        const perf = performance as PerformanceWithMemory;
+        if (perf.memory) {
+          const memory = perf.memory;
           const usage: MemoryInfo = {
             usedJSHeapSize: memory.usedJSHeapSize,
             totalJSHeapSize: memory.totalJSHeapSize,
-            jsHeapSizeLimit: memory.jsHeapSizeLimit
+            jsHeapSizeLimit: memory.jsHeapSizeLimit,
           };
 
-          this.callbacks.forEach(cb => {
+          this.callbacks.forEach((cb) => {
             try {
               cb(usage);
             } catch (error) {
-              console.warn('Memory monitor callback error:', error);
+              void error;
             }
           });
         }
@@ -43,12 +57,12 @@ export class MemoryMonitor {
   }
 
   getCurrentMemoryUsage(): MemoryInfo | null {
-    if ('memory' in performance) {
-      const memory = (performance as any).memory;
+    const perf = performance as PerformanceWithMemory;
+    if (perf.memory) {
       return {
-        usedJSHeapSize: memory.usedJSHeapSize,
-        totalJSHeapSize: memory.totalJSHeapSize,
-        jsHeapSizeLimit: memory.jsHeapSizeLimit
+        usedJSHeapSize: perf.memory.usedJSHeapSize,
+        totalJSHeapSize: perf.memory.totalJSHeapSize,
+        jsHeapSizeLimit: perf.memory.jsHeapSizeLimit,
       };
     }
     return null;
@@ -66,10 +80,10 @@ export class MemoryMonitor {
   }
 
   forceGarbageCollection(): void {
-    if (typeof window !== 'undefined' && window.gc) {
+    if (typeof window !== "undefined" && window.gc) {
       window.gc();
     } else {
-      console.warn('Garbage collection not available. Enable --expose-gc flag in development.');
+      void 0;
     }
   }
 }

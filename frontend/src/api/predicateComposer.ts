@@ -1,13 +1,13 @@
-import type { NeighborhoodBlock } from '../components/predicate-builder/constraints/NeighborhoodConstraintBlock';
+import type { NeighborhoodBlock } from "../components/predicate-builder/constraints/NeighborhoodConstraintBlock";
 
 export interface CompositePredicateRequest {
   predicates: Array<{
-    type: 'topology' | 'attribute' | 'fol';
-    predicate: any;
+    type: "topology" | "attribute" | "fol";
+    predicate: Record<string, unknown>;
   }>;
   logical_structure: {
-    type: 'compound';
-    operator: 'and' | 'or' | 'not';
+    type: "compound";
+    operator: "and" | "or" | "not";
     predicates: string[];
   };
   neighborhood_constraints: NeighborhoodBlock[];
@@ -15,7 +15,7 @@ export interface CompositePredicateRequest {
     enabled: boolean;
     variables: Array<{
       name: string;
-      type: 'neighbor' | 'witness';
+      type: "neighbor" | "witness";
     }>;
   };
 }
@@ -47,13 +47,13 @@ export interface PredicateValidationRequest {
 export interface PredicateValidationResponse {
   is_valid: boolean;
   errors: Array<{
-    type: 'syntax' | 'semantic' | 'missing_variable';
+    type: "syntax" | "semantic" | "missing_variable";
     message: string;
     position?: number;
   }>;
   suggestions?: Array<{
     text: string;
-    type: 'completion' | 'correction';
+    type: "completion" | "correction";
   }>;
 }
 
@@ -70,37 +70,39 @@ export interface PredicateSuggestionsResponse {
   suggestions: Array<{
     text: string;
     description: string;
-    type: 'predicate' | 'operator' | 'quantifier' | 'relation';
+    type: "predicate" | "operator" | "quantifier" | "relation";
     category: string;
     priority: number;
   }>;
 }
 
 export async function evaluateCompositePredicate(
-  request: CompositePredicateRequest
+  request: CompositePredicateRequest,
 ): Promise<CompositePredicateResponse> {
-  const response = await fetch('/api/predicates/compose', {
-    method: 'POST',
+  const response = await fetch("/api/predicates/compose", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to evaluate composite predicate: ${response.statusText}`);
+    throw new Error(
+      `Failed to evaluate composite predicate: ${response.statusText}`,
+    );
   }
 
   return response.json();
 }
 
 export async function validatePredicate(
-  request: PredicateValidationRequest
+  request: PredicateValidationRequest,
 ): Promise<PredicateValidationResponse> {
-  const response = await fetch('/api/predicates/validate', {
-    method: 'POST',
+  const response = await fetch("/api/predicates/validate", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
   });
@@ -112,28 +114,30 @@ export async function validatePredicate(
   return response.json();
 }
 
-export async function getPredicateSuggestions(
-  request: PredicateSuggestionsRequest,
-  _sessionId: string = 'default'
-): Promise<PredicateSuggestionsResponse> {
-  const response = await fetch('/api/predicates/suggestions', {
-    method: 'GET',
+export async function getPredicateSuggestions(): Promise<PredicateSuggestionsResponse> {
+  const response = await fetch("/api/predicates/suggestions", {
+    method: "GET",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to get predicate suggestions: ${response.statusText}`);
+    throw new Error(
+      `Failed to get predicate suggestions: ${response.statusText}`,
+    );
   }
 
   return response.json();
 }
 
-export function serializeNeighborhoodBlock(block: NeighborhoodBlock): any {
+export function serializeNeighborhoodBlock(
+  block: NeighborhoodBlock,
+): Record<string, unknown> {
   return {
     id: block.id,
     target_predicate_ids: block.targetPredicateIds,
+    target_type: block.targetType,
     quantifier: block.quantifier,
     count: block.count,
     relation: block.relation,
@@ -149,21 +153,29 @@ export function serializeNeighborhoodBlock(block: NeighborhoodBlock): any {
   };
 }
 
-export function deserializeNeighborhoodBlock(data: any): NeighborhoodBlock {
+export function deserializeNeighborhoodBlock(
+  data: Record<string, unknown>,
+): NeighborhoodBlock {
+  const constraintPredicate = data.constraint_predicate as
+    | Record<string, unknown>
+    | undefined;
   return {
-    id: data.id,
-    targetPredicateIds: data.target_predicate_ids || [],
-    quantifier: data.quantifier || 'ALL',
-    count: data.count,
-    relation: data.relation || 'neighbors',
-    kParameter: data.k_parameter,
+    id: data.id as string,
+    targetPredicateIds: (data.target_predicate_ids as string[]) || [],
+    targetType:
+      (data.target_type as NeighborhoodBlock["targetType"]) || "predicates",
+    quantifier: (data.quantifier as NeighborhoodBlock["quantifier"]) || "ALL",
+    count: data.count as number | undefined,
+    relation: (data.relation as NeighborhoodBlock["relation"]) || "neighbors",
+    kParameter: data.k_parameter as number | undefined,
     constraint: {
-      type: data.constraint_type || 'attribute',
-      attribute: data.constraint_predicate?.attribute || '',
-      operator: data.constraint_predicate?.operator || '=',
-      value: data.constraint_predicate?.value || '',
+      type: (data.constraint_type as "attribute" | "topology") || "attribute",
+      attribute: (constraintPredicate?.attribute as string) || "",
+      operator: (constraintPredicate?.operator as string) || "=",
+      value: constraintPredicate?.value || "",
     },
-    resultMode: data.result_mode || 'primary_only',
-    projectionVariable: data.projection_variable,
+    resultMode:
+      (data.result_mode as NeighborhoodBlock["resultMode"]) || "primary_only",
+    projectionVariable: data.projection_variable as string | undefined,
   };
 }

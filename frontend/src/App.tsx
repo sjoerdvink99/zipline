@@ -1,14 +1,18 @@
-import { useEffect, useCallback, useState } from "react";
-import { GraphCanvas } from "./components/panels/GraphCanvas";
+import { useEffect, useCallback, useState, useRef } from "react";
+import { DataSpacePanel } from "./components/panels/DataSpacePanel";
 import { PredicateBridge } from "./components/panels/PredicateBridge";
 import { AttributePanel } from "./components/panels/AttributePanel";
 import { Navbar } from "./components/ui/Navbar";
-import { PanelHeader } from "./components/ui/PanelHeader";
+import { TopologyIcon, AttributeIcon } from "./components/ui/Icons";
 import { ToggleButtonGroup } from "./components/ui/ToggleButtonGroup";
-import { TopologyIcon } from "./components/ui/Icons";
 import { useAnalysisStore } from "./store/analysisStore";
 import { usePredicateStore } from "./store/predicates";
+import { usePredicateComposerStore } from "./store/predicateComposerStore";
+import { usePredicateStore as useFolStore } from "./store/folStore";
+import { useVisualBuilderStore } from "./components/predicate-builder/visual";
+import { useGraphDataStore } from "./store/graphDataStore";
 import type { SelectionKind } from "./types";
+import { getCurrentDataset } from "./api";
 
 export default function App() {
   const {
@@ -20,93 +24,187 @@ export default function App() {
     loadSessionState,
   } = useAnalysisStore();
 
-  const { loadPredicateState } = usePredicateStore();
+  const { loadPredicateState, clear: clearPredicates } = usePredicateStore();
+  const { reset: resetComposer } = usePredicateComposerStore();
+  const { clear: clearFolStore } = useFolStore();
+  const { clear: clearVisualBuilder } = useVisualBuilderStore();
 
-  const [showSchemaView, setShowSchemaView] = useState(false);
+  const [attributeCollapsed, setAttributeCollapsed] = useState(false);
+  const [aggregation, setAggregation] = useState<"full" | "schema">("full");
+  const [vizType, setVizType] = useState<"node-link" | "matrix">("node-link");
 
+  const startupRan = useRef(false);
   useEffect(() => {
-    const restoreTimer = setTimeout(() => {
-      try {
-        const restored = loadSessionState();
-        const predicateRestored = loadPredicateState();
-        if (restored || predicateRestored) {
-          console.log('Session state restored from previous session');
-        }
-      } catch (error) {
-        console.warn('Failed to restore session state:', error);
-      }
-    }, 500);
+    if (startupRan.current) return;
+    startupRan.current = true;
 
-    return () => clearTimeout(restoreTimer);
-  }, [loadSessionState, loadPredicateState]);
+    const run = async () => {
+      try {
+        const response = await getCurrentDataset();
+        if (response.dataset) {
+          setCurrentDataset(response.dataset.name);
+        }
+      } catch {
+        void 0;
+      }
+      setTimeout(() => {
+        try {
+          loadSessionState();
+          loadPredicateState();
+        } catch {
+          void 0;
+        }
+      }, 0);
+    };
+
+    run();
+  }, [loadSessionState, loadPredicateState, setCurrentDataset]);
 
   const handleSelectionChange = useCallback(
-    (
-      _kind: SelectionKind,
-      hasSelected: boolean,
-      nodes: string[]
-    ) => {
+    (_kind: SelectionKind, hasSelected: boolean, nodes: string[]) => {
       if (hasSelected && nodes.length > 0) {
         setSelection(nodes, "topology");
       } else if (!hasSelected) {
-        reset();
+        if (!useAnalysisStore.getState().contrastMode) {
+          reset();
+        }
       }
     },
-    [setSelection, reset]
+    [setSelection, reset],
   );
 
-  const handleDatasetChange = useCallback((datasetName: string) => {
-    setCurrentDataset(datasetName);
-    reset();
-    window.dispatchEvent(new CustomEvent("gb:graph-updated"));
-  }, [setCurrentDataset, reset]);
+  const handleDatasetChange = useCallback(
+    (datasetName: string) => {
+      setCurrentDataset(datasetName);
+      reset();
+      clearPredicates();
+      clearFolStore();
+      resetComposer();
+      clearVisualBuilder();
+      useGraphDataStore.getState().reset();
+      useGraphDataStore.getState().fetchElements();
+      window.dispatchEvent(new CustomEvent("gb:graph-switched"));
+    },
+    [
+      setCurrentDataset,
+      reset,
+      clearPredicates,
+      clearFolStore,
+      resetComposer,
+      clearVisualBuilder,
+    ],
+  );
 
   const externalSelectedNodes =
     selectedNodes.length > 0 ? selectedNodes : predicateMatchNodes;
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-gray-100">
+    <div className="flex h-screen w-screen flex-col bg-white">
       <Navbar onDatasetChange={handleDatasetChange} />
 
-      <div className="flex flex-1 min-h-0 px-2 pb-2 pt-2">
-        <div className="grid grid-cols-3 flex-1 min-h-0 bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="min-h-0 flex flex-col overflow-hidden border-r border-gray-100">
-            <PanelHeader
-              icon={<TopologyIcon />}
-              title="Topology Space"
-              subtitle="Graph structure and connectivity"
-            >
-              <ToggleButtonGroup
-                options={[
-                  { value: "false", label: "Graph" },
-                  { value: "true", label: "Schema" }
-                ]}
-                value={showSchemaView.toString()}
-                onChange={(value) => setShowSchemaView(value === "true")}
-              />
-            </PanelHeader>
-            <div className="flex-1 min-h-0">
-              <GraphCanvas
-                onSelectionChange={handleSelectionChange}
-                externalSelectedNodes={externalSelectedNodes}
-                hoveredNodes={[]}
-                showSchemaView={showSchemaView}
-                onSchemaViewChange={setShowSchemaView}
-              />
+      <div
+        className="grid flex-1 min-h-0 overflow-hidden"
+        style={{ gridTemplateColumns: "1.4fr 1fr" }}
+      >
+        <div
+          className="min-h-0 overflow-hidden border-r border-gray-200 grid grid-rows-[auto_1fr] transition-[grid-template-columns] duration-300 ease-in-out"
+          style={{ gridTemplateColumns: `1fr ${attributeCollapsed ? "28px" : "40%"}` }}
+        >
+          <div className="px-4 py-2 border-b border-gray-100 bg-white overflow-hidden">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-1.5 bg-gray-50 rounded-lg border border-gray-100 shrink-0">
+                  <TopologyIcon className="w-4 h-4 text-gray-600" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-gray-900 truncate">Topology</h2>
+                  <p className="text-2xs text-gray-500 truncate">Graph topology</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <ToggleButtonGroup
+                  options={[
+                    { value: "full", label: "Full" },
+                    { value: "schema", label: "Schema" },
+                  ]}
+                  value={aggregation}
+                  onChange={(value) => {
+                    setAggregation(value as "full" | "schema");
+                    reset();
+                  }}
+                />
+                <ToggleButtonGroup
+                  options={[
+                    { value: "node-link", label: "Node-link" },
+                    { value: "matrix", label: "Matrix" },
+                  ]}
+                  value={vizType}
+                  onChange={(value) => setVizType(value as "node-link" | "matrix")}
+                />
+              </div>
             </div>
           </div>
 
-          <div className="min-h-0 h-full flex flex-col overflow-hidden border-r border-gray-100">
-            <PredicateBridge
-              selectedNodeIds={selectedNodes}
-              onPredicateSelect={() => {}}
-              onPredicateFilter={() => {}}
+          {attributeCollapsed ? (
+            <div className="border-l border-gray-100 border-b border-gray-100 bg-white flex items-center justify-center overflow-hidden">
+              <button
+                onClick={() => setAttributeCollapsed(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors duration-150"
+                title="Expand attributes"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <div className="border-l border-gray-100 px-4 py-2 border-b border-gray-100 bg-white overflow-hidden">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-1.5 bg-gray-50 rounded-lg border border-gray-100 shrink-0">
+                    <AttributeIcon className="w-4 h-4 text-gray-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-gray-900 truncate">Attributes</h2>
+                    <p className="text-2xs text-gray-500 truncate">Node distributions and filters</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAttributeCollapsed(true)}
+                  className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors duration-150 p-1"
+                  title="Collapse attributes"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="min-h-0 overflow-hidden flex flex-col">
+            <DataSpacePanel
+              aggregation={aggregation}
+              vizType={vizType}
+              externalSelectedNodes={externalSelectedNodes}
+              onSelectionChange={handleSelectionChange}
             />
           </div>
 
-          <div className="min-h-0 h-full flex flex-col overflow-hidden">
-            <AttributePanel />
+          <div
+            className={`min-h-0 overflow-hidden border-l border-gray-100 flex flex-col transition-opacity duration-200 ${
+              attributeCollapsed ? "opacity-0" : "opacity-100"
+            }`}
+          >
+            <AttributePanel showHeader={false} />
           </div>
+        </div>
+
+        <div className="min-h-0 h-full flex flex-col overflow-hidden">
+          <PredicateBridge
+            selectedNodeIds={selectedNodes}
+            onPredicateFilter={() => {}}
+          />
         </div>
       </div>
     </div>

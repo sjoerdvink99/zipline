@@ -1,19 +1,16 @@
 import { useMemo, useRef, useEffect, useCallback, useState } from "react";
 import { NODE_TYPE_COLORS, getNodeType } from "../config/pixiColors";
-import type { D3Node, D3Edge } from "../types";
-import type { FilterItem } from "../types/predicate";
+import type { FilterItem } from "../types/fol";
 import { usePredicateStore } from "../store/predicates";
+import { useGraphDataStore } from "../store/graphDataStore";
 import * as d3 from "d3";
 
 interface SchemaViewProps {
-  nodes: D3Node[];
-  edges: D3Edge[];
-  onNodeTypeSelect?: (nodeType: string, nodeIds: string[], isMultiSelect: boolean) => void;
-  selectedNodeTypes?: string[];
-  isVisible?: boolean;
+  onSelectionChange: (nodeIds: string[]) => void;
 }
 
-export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes = [], isVisible = true }: SchemaViewProps) => {
+export const SchemaView = ({ onSelectionChange }: SchemaViewProps) => {
+  const { nodes, edges } = useGraphDataStore();
   const { addPredicate } = usePredicateStore();
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -21,11 +18,14 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
   const [isLayoutStable, setIsLayoutStable] = useState(false);
   const [initialLayoutComplete, setInitialLayoutComplete] = useState(false);
   const frameRef = useRef<number | null>(null);
+  const [selectedNodeTypes, setSelectedNodeTypes] = useState<string[]>([]);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  useEffect(() => { onSelectionChangeRef.current = onSelectionChange; });
 
   const nodeTypeCache = useMemo(() => {
     const cache = new Map<string, string>();
     for (const node of nodes) {
-      cache.set(node.id, getNodeType(node.label || '', node));
+      cache.set(node.id, getNodeType(node.label || "", node));
     }
     return cache;
   }, [nodes]);
@@ -34,21 +34,15 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
     if (!nodes || nodes.length === 0) {
       return { schemaNodes: [], schemaEdges: [], nodeTypeToIds: new Map() };
     }
-    if (nodes.length > 10000) {
-      console.warn('Large dataset detected, schema view may be slow');
-    }
-
-    const typeToNodes = new Map<string, D3Node[]>();
+    const typeToNodes = new Map<string, typeof nodes>();
     const nodeTypeToIds = new Map<string, string[]>();
 
     for (const node of nodes) {
       const nodeType = nodeTypeCache.get(node.id)!;
-
       if (!typeToNodes.has(nodeType)) {
         typeToNodes.set(nodeType, []);
         nodeTypeToIds.set(nodeType, []);
       }
-
       typeToNodes.get(nodeType)!.push(node);
       nodeTypeToIds.get(nodeType)!.push(node.id);
     }
@@ -60,83 +54,80 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
       x: 0,
       y: 0,
       fx: null as number | null,
-      fy: null as number | null
+      fy: null as number | null,
     }));
     const typeConnections = new Map<string, Set<string>>();
 
     if (edges && edges.length > 0) {
       for (const edge of edges) {
-        const edgeData = edge.data || edge;
-        const sourceId = typeof edgeData.source === 'string' ? edgeData.source : edgeData.source?.id;
-        const targetId = typeof edgeData.target === 'string' ? edgeData.target : edgeData.target?.id;
-
+        const edgeData = (edge as any).data || edge;
+        const sourceId =
+          typeof edgeData.source === "string" ? edgeData.source : (edgeData.source as any)?.id;
+        const targetId =
+          typeof edgeData.target === "string" ? edgeData.target : (edgeData.target as any)?.id;
         const sourceType = nodeTypeCache.get(sourceId);
         const targetType = nodeTypeCache.get(targetId);
-
         if (sourceType && targetType) {
-
           if (sourceType !== targetType) {
-            if (!typeConnections.has(sourceType)) {
-              typeConnections.set(sourceType, new Set());
-            }
-            if (!typeConnections.has(targetType)) {
-              typeConnections.set(targetType, new Set());
-            }
-
+            if (!typeConnections.has(sourceType)) typeConnections.set(sourceType, new Set());
+            if (!typeConnections.has(targetType)) typeConnections.set(targetType, new Set());
             typeConnections.get(sourceType)!.add(targetType);
             typeConnections.get(targetType)!.add(sourceType);
           }
         }
       }
     }
-    const schemaEdges: Array<{id: string, source: string, target: string}> = [];
+    const schemaEdges: Array<{ id: string; source: string; target: string }> = [];
     const processedPairs = new Set<string>();
-
     for (const [sourceType, targets] of typeConnections.entries()) {
       for (const targetType of targets) {
-        const pairKey = [sourceType, targetType].sort().join('-');
+        const pairKey = [sourceType, targetType].sort().join("-");
         if (!processedPairs.has(pairKey)) {
-          schemaEdges.push({
-            id: `${sourceType}-${targetType}`,
-            source: sourceType,
-            target: targetType
-          });
+          schemaEdges.push({ id: `${sourceType}-${targetType}`, source: sourceType, target: targetType });
           processedPairs.add(pairKey);
         }
       }
     }
-
     return { schemaNodes, schemaEdges, nodeTypeToIds };
   }, [nodes, edges, nodeTypeCache]);
 
-  const handleNodeTypeClick = useCallback((nodeType: string, isShiftPressed: boolean) => {
-    if (isShiftPressed) {
-      const predicateId = `node_type_${nodeType}_${Date.now()}`;
-      const nodeTypePredicate: FilterItem = {
-        id: predicateId,
-        type: 'attribute',
-        predicate: {
-          attribute: 'node_type',
-          operator: '=',
-          value: nodeType,
-          node_type: undefined // Don't constrain by node type since this IS the node type constraint
-        },
-        description: `Node type = "${nodeType}"`,
-        nodeTypes: [nodeType]
-      };
-
-      addPredicate(nodeTypePredicate);
-      console.log(`Added node type predicate for: ${nodeType}`);
-    } else {
-      const nodeIds = schemaData.nodeTypeToIds.get(nodeType) || [];
-      onNodeTypeSelect?.(nodeType, nodeIds, false);
-    }
-  }, [schemaData.nodeTypeToIds, onNodeTypeSelect, addPredicate]);
   useEffect(() => {
-    if (!svgRef.current || schemaData.schemaNodes.length === 0 || !isVisible) return;
-    if (simulationRef.current) {
-      simulationRef.current.stop();
-    }
+    const allNodeIds = selectedNodeTypes.flatMap((type) => schemaData.nodeTypeToIds.get(type) || []);
+    onSelectionChangeRef.current(allNodeIds);
+  }, [selectedNodeTypes, schemaData.nodeTypeToIds]);
+
+  const handleNodeTypeClick = useCallback(
+    (nodeType: string, isShiftPressed: boolean) => {
+      if (isShiftPressed) {
+        const predicateId = `node_type_${nodeType}_${Date.now()}`;
+        const nodeTypePredicate: FilterItem = {
+          id: predicateId,
+          type: "attribute",
+          predicate: {
+            attribute: "node_type",
+            operator: "=",
+            value: nodeType,
+            node_type: undefined,
+          },
+          description: `Node type = "${nodeType}"`,
+          nodeTypes: [nodeType],
+        };
+        addPredicate(nodeTypePredicate);
+      } else {
+        setSelectedNodeTypes((prev) => {
+          if (prev.includes(nodeType)) {
+            return prev.filter((t) => t !== nodeType);
+          }
+          return [nodeType];
+        });
+      }
+    },
+    [addPredicate],
+  );
+
+  useEffect(() => {
+    if (!svgRef.current || schemaData.schemaNodes.length === 0) return;
+    if (simulationRef.current) simulationRef.current.stop();
 
     const svg = d3.select(svgRef.current);
     const container = containerRef.current;
@@ -160,17 +151,15 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
         node.y = centerY + radius * Math.sin(angle);
       }
     });
-    const zoom = d3.zoom()
-      .scaleExtent([0.1, 10])
-      .on("zoom", (event) => {
-        g.attr("transform", event.transform);
-      });
 
+    const zoom = d3.zoom().scaleExtent([0.1, 10]).on("zoom", (event) => {
+      g.attr("transform", event.transform);
+    });
     svg.call(zoom as any);
 
     svg.on("click", (event) => {
       if (event.target === svg.node()) {
-        onNodeTypeSelect?.('', [], false); // Clear selection
+        setSelectedNodeTypes([]);
       }
     });
 
@@ -179,56 +168,46 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
     const linkDistance = schemaNodeCount > 8 ? 140 : schemaNodeCount > 4 ? 160 : 180;
     const chargeStrength = schemaNodeCount > 8 ? -800 : schemaNodeCount > 4 ? -1000 : -1200;
     const nodeRadius = (d: any) => Math.max(35, Math.sqrt(d.count) * 5);
-    const collisionRadius = (d: any) => nodeRadius(d) + 25; // More space to prevent edge overlaps
+    const collisionRadius = (d: any) => nodeRadius(d) + 25;
 
-    const simulation = d3.forceSimulation(schemaData.schemaNodes as any)
-      .force("link", d3.forceLink(schemaData.schemaEdges as any)
-        .id((d: any) => d.id)
-        .distance(linkDistance)
-        .strength(0.4)) // Stronger links for better edge clarity
-      .force("charge", d3.forceManyBody()
-        .strength(chargeStrength)
-        .distanceMax(400)) // Limit charge distance for better clustering
-      .force("center", d3.forceCenter(centerX, centerY).strength(0.05)) // Weaker center force
-      .force("collision", d3.forceCollide()
-        .radius(collisionRadius)
-        .strength(0.9)
-        .iterations(3)) // Multiple collision iterations for better separation
-      .force("x", d3.forceX(centerX).strength(0.02)) // Very weak x positioning
-      .force("y", d3.forceY(centerY).strength(0.02)) // Very weak y positioning
-      .alphaDecay(0.02) // Slower convergence for more stable layout
-      .velocityDecay(0.85) // Higher damping for smoother movement
-      .alpha(1); // Start with full energy
+    const simulation = d3
+      .forceSimulation(schemaData.schemaNodes as any)
+      .force("link", d3.forceLink(schemaData.schemaEdges as any).id((d: any) => d.id).distance(linkDistance).strength(0.4))
+      .force("charge", d3.forceManyBody().strength(chargeStrength).distanceMax(400))
+      .force("center", d3.forceCenter(centerX, centerY).strength(0.05))
+      .force("collision", d3.forceCollide().radius(collisionRadius).strength(0.9).iterations(3))
+      .force("x", d3.forceX(centerX).strength(0.02))
+      .force("y", d3.forceY(centerY).strength(0.02))
+      .alphaDecay(0.02)
+      .velocityDecay(0.85)
+      .alpha(1);
 
     simulationRef.current = simulation;
+
     const linksGroup = g.append("g").attr("class", "edges");
     const links = linksGroup
       .selectAll("line")
       .data(schemaData.schemaEdges)
       .join("line")
-      .attr("stroke", "#cccccc") // Match main graph view edge color
-      .attr("stroke-width", 2) // Slightly thinner to match proportions
-      .attr("opacity", 0.6) // Match main graph view opacity
+      .attr("stroke", "#cccccc")
+      .attr("stroke-width", 2)
+      .attr("opacity", 0.6)
       .attr("stroke-linecap", "round");
-    const drag = d3.drag()
+
+    const drag = d3
+      .drag()
       .on("start", (event, d: any) => {
         setIsLayoutStable(false);
-        if (!event.active && simulation.alpha() < 0.01) {
-          simulation.alphaTarget(0.03).restart();
-        }
+        if (!event.active && simulation.alpha() < 0.01) simulation.alphaTarget(0.03).restart();
         d.fx = d.x;
         d.fy = d.y;
       })
       .on("drag", (event, d: any) => {
         d.fx = event.x;
         d.fy = event.y;
-        if (frameRef.current) {
-          cancelAnimationFrame(frameRef.current);
-        }
+        if (frameRef.current) cancelAnimationFrame(frameRef.current);
         frameRef.current = requestAnimationFrame(() => {
-          if (simulation.alpha() < 0.01) {
-            simulation.alpha(0.01);
-          }
+          if (simulation.alpha() < 0.01) simulation.alpha(0.01);
         });
       })
       .on("end", (event, d: any) => {
@@ -237,6 +216,7 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
         d.fy = null;
         setTimeout(() => setIsLayoutStable(true), 200);
       });
+
     const nodesGroup = g.append("g").attr("class", "nodes");
     const nodeGroups = nodesGroup
       .selectAll("g")
@@ -247,18 +227,20 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
       .call(drag as any)
       .on("click", (event, d: any) => {
         event.stopPropagation();
-        if (simulation.alpha() > 0.1) {
-          return;
-        }
+        if (simulation.alpha() > 0.1) return;
         handleNodeTypeClick(d.type, event.shiftKey);
       });
-    nodeGroups.append("circle")
-      .attr("r", (d: any) => Math.max(35, Math.sqrt(d.count) * 5)) // Slightly larger to prevent edge overlaps
-      .attr("fill", (d: any) => `#${d.color.toString(16).padStart(6, '0')}`)
-      .attr("stroke", "#ffffff") // Default stroke - will be updated by separate effect
-      .attr("stroke-width", 2) // Default stroke width
+
+    nodeGroups
+      .append("circle")
+      .attr("r", (d: any) => Math.max(35, Math.sqrt(d.count) * 5))
+      .attr("fill", (d: any) => `#${d.color.toString(16).padStart(6, "0")}`)
+      .attr("stroke", "#ffffff")
+      .attr("stroke-width", 2)
       .attr("opacity", 0.9);
-    nodeGroups.append("text")
+
+    nodeGroups
+      .append("text")
       .attr("text-anchor", "middle")
       .attr("dy", "0.35em")
       .attr("font-size", "11px")
@@ -266,14 +248,18 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
       .attr("fill", "#ffffff")
       .attr("pointer-events", "none")
       .text((d: any) => {
-        const displayName = d.type === 'effect/phenotype' ? 'Effect/Phenotype'
-          : d.type === 'gene/protein' ? 'Gene/Protein'
-          : d.type.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-        return displayName.length > 12 ? displayName.substring(0, 10) + '...' : displayName;
+        const displayName =
+          d.type === "effect/phenotype"
+            ? "Effect/Phenotype"
+            : d.type === "gene/protein"
+              ? "Gene/Protein"
+              : d.type.split("_").map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+        return displayName.length > 12 ? displayName.substring(0, 10) + "..." : displayName;
       });
-    const countLabels = nodeGroups.append("g").attr("transform", "translate(0, 45)");
 
-    countLabels.append("rect")
+    const countLabels = nodeGroups.append("g").attr("transform", "translate(0, 45)");
+    countLabels
+      .append("rect")
       .attr("x", (d: any) => -(`${d.count} nodes`.length * 3.5))
       .attr("y", -8)
       .attr("width", (d: any) => `${d.count} nodes`.length * 7)
@@ -283,7 +269,8 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
       .attr("stroke", "#e5e7eb")
       .attr("opacity", 0.9);
 
-    countLabels.append("text")
+    countLabels
+      .append("text")
       .attr("text-anchor", "middle")
       .attr("dy", "0.35em")
       .attr("font-size", "10px")
@@ -291,29 +278,23 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
       .attr("fill", "#374151")
       .attr("pointer-events", "none")
       .text((d: any) => `${d.count} nodes`);
-    let tickCount = 0;
-    const maxTicks = 150; // More ticks for better edge separation
 
+    let tickCount = 0;
+    const maxTicks = 150;
     let lastTickTime = 0;
-    const minTickInterval = 16; // ~60fps max
+    const minTickInterval = 16;
 
     simulation.on("tick", () => {
       tickCount++;
       const now = performance.now();
-
-      if (now - lastTickTime < minTickInterval && tickCount < maxTicks) {
-        return;
-      }
+      if (now - lastTickTime < minTickInterval && tickCount < maxTicks) return;
       lastTickTime = now;
-
       links
         .attr("x1", (d: any) => d.source.x)
         .attr("y1", (d: any) => d.source.y)
         .attr("x2", (d: any) => d.target.x)
         .attr("y2", (d: any) => d.target.y);
-
       nodeGroups.attr("transform", (d: any) => `translate(${d.x}, ${d.y})`);
-
       if (simulation.alpha() < 0.008 || tickCount >= maxTicks) {
         simulation.stop();
         setIsLayoutStable(true);
@@ -331,34 +312,31 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
       simulation.stop();
       simulationRef.current = null;
     };
-  }, [schemaData, handleNodeTypeClick, isVisible, initialLayoutComplete]);
+  }, [schemaData, handleNodeTypeClick, initialLayoutComplete]);
 
   useEffect(() => {
-    if (!svgRef.current || !isVisible) return;
-
+    if (!svgRef.current) return;
     const svg = d3.select(svgRef.current);
-    const nodeGroups = svg.selectAll('.nodes g');
-
-    nodeGroups.select('circle')
+    const nodeGroups = svg.selectAll(".nodes g");
+    nodeGroups
+      .select("circle")
       .attr("stroke", (d: any) => selectedNodeTypes.includes(d.type) ? "#3b82f6" : "#ffffff")
       .attr("stroke-width", (d: any) => selectedNodeTypes.includes(d.type) ? 3 : 2)
-      .style("filter", (d: any) => selectedNodeTypes.includes(d.type) ? "drop-shadow(0px 2px 4px rgba(59, 130, 246, 0.3))" : "none");
-  }, [selectedNodeTypes, isVisible]);
+      .style("filter", (d: any) =>
+        selectedNodeTypes.includes(d.type)
+          ? "drop-shadow(0px 2px 4px rgba(59, 130, 246, 0.3))"
+          : "none",
+      );
+  }, [selectedNodeTypes]);
 
   useEffect(() => {
     setInitialLayoutComplete(false);
     setIsLayoutStable(false);
   }, [schemaData.schemaNodes.length, schemaData.schemaEdges.length]);
-  useEffect(() => {
-    if (!isVisible && simulationRef.current) {
-      simulationRef.current.stop();
-    }
-  }, [isVisible]);
+
   useEffect(() => {
     return () => {
-      if (frameRef.current) {
-        cancelAnimationFrame(frameRef.current);
-      }
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
       if (simulationRef.current) {
         simulationRef.current.stop();
         simulationRef.current = null;
@@ -382,16 +360,13 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
 
   return (
     <div ref={containerRef} className="h-full w-full bg-gray-50 relative overflow-hidden">
-      <svg
-        ref={svgRef}
-        width="100%"
-        height="100%"
-        className="absolute inset-0"
-      />
+      <svg ref={svgRef} width="100%" height="100%" className="absolute inset-0" />
       <div className="absolute bottom-3 left-3 z-10">
         <div className="bg-white/90 backdrop-blur-sm rounded-md px-2.5 py-1.5 shadow-sm border border-gray-100 mb-2">
           <div className="text-[10px] text-gray-600 font-medium">
-            {schemaData.schemaNodes.length} type{schemaData.schemaNodes.length !== 1 ? 's' : ''} · {schemaData.schemaEdges.length} connection{schemaData.schemaEdges.length !== 1 ? 's' : ''} · {nodes.length.toLocaleString()} total nodes
+            {schemaData.schemaNodes.length} type{schemaData.schemaNodes.length !== 1 ? "s" : ""} ·{" "}
+            {schemaData.schemaEdges.length} connection{schemaData.schemaEdges.length !== 1 ? "s" : ""} ·{" "}
+            {nodes.length.toLocaleString()} total nodes
             {!isLayoutStable && (
               <span className="ml-2 text-blue-500">
                 <span className="inline-block animate-spin">⟳</span>
@@ -401,12 +376,11 @@ export const SchemaView = ({ nodes, edges, onNodeTypeSelect, selectedNodeTypes =
           </div>
           {selectedNodeTypes.length > 0 && (
             <div className="text-[9px] text-gray-500 mt-1">
-              {selectedNodeTypes.length} type{selectedNodeTypes.length > 1 ? 's' : ''} selected
+              {selectedNodeTypes.length} type{selectedNodeTypes.length > 1 ? "s" : ""} selected
             </div>
           )}
         </div>
       </div>
-
     </div>
   );
 };

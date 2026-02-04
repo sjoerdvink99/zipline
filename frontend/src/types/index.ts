@@ -1,5 +1,5 @@
-export * from './graph';
-export * from './predicate';
+export * from "./graph";
+export * from "./fol";
 
 export interface MemoryInfo {
   usedJSHeapSize: number;
@@ -10,11 +10,5 @@ export interface MemoryInfo {
 declare global {
   interface Window {
     gc?: () => void;
-  }
-
-  namespace NodeJS {
-    interface Timeout {
-      [Symbol.toPrimitive](): number;
-    }
   }
 }

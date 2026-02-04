@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from .datasets import DatasetRegistry, GraphMeta, datasets
+from fol.inference import get_lifted_predicates, infer_predicates_from_selection
+
+from .evaluator import PredicateResult, PredicateService
 
 __all__ = [
-    "GraphMeta",
-    "DatasetRegistry",
-    "datasets",
+    "PredicateResult",
+    "PredicateService",
+    "get_lifted_predicates",
+    "infer_predicates_from_selection",
 ]

@@ -1,0 +1,1 @@
+export { LearnedPredicatesPanel } from "./LearnedPredicatesPanel";
