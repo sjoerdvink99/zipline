@@ -29,6 +29,8 @@ export function useGraphSchema(): UseGraphSchemaResult {
 
   useEffect(() => {
     fetchSchema();
+    window.addEventListener("gb:graph-switched", fetchSchema);
+    return () => window.removeEventListener("gb:graph-switched", fetchSchema);
   }, []);
 
   return {

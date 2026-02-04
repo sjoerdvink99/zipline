@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import networkx as nx
 from fastapi import APIRouter, Depends, Query
 
 from core.dependencies import get_active_graph
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/api/attributes", tags=["attributes"])
 
 @router.get("/distributions")
 async def get_distributions(
-    graph=Depends(get_active_graph),
+    graph: nx.Graph = Depends(get_active_graph),
 ) -> dict[str, Any]:
     try:
         return compute_attribute_distributions(graph)
@@ -39,7 +40,7 @@ async def compute_umap(
     min_dist: float = Query(0.1, ge=0.0, le=1.0),
     metric: str = Query("euclidean"),
     n_components: int = Query(2, ge=2, le=3),
-    graph=Depends(get_active_graph),
+    graph: nx.Graph = Depends(get_active_graph),
 ) -> dict[str, Any]:
     try:
         result = compute_umap_embedding(

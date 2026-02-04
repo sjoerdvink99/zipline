@@ -1,8 +1,7 @@
-
-import type { FilterItem, ConstraintItem } from '../types';
+import type { FilterItem, NeighborhoodConstraint } from "../types";
 
 const STORAGE_VERSION = "1.0";
-const STORAGE_PREFIX = "graphbridge_session_";
+const STORAGE_PREFIX = "zipline_session_";
 const MAX_STORAGE_SIZE = 1024 * 1024 * 5;
 
 export interface PersistedSessionState {
@@ -14,8 +13,8 @@ export interface PersistedSessionState {
     selectionSource: string | null;
     activeFilterItems: FilterItem[];
     activeFilterOperations: Record<string, "and" | "or" | "not">;
-    predicates: unknown[];
-    constraints: ConstraintItem[];
+    predicates: FilterItem[];
+    constraints: NeighborhoodConstraint[];
     setOperations: Record<string, "and" | "or" | "not">;
   };
 }
@@ -26,7 +25,7 @@ export function getStorageKey(dataset: string): string {
 
 export function isLocalStorageAvailable(): boolean {
   try {
-    const test = '__localStorage_test__';
+    const test = "__localStorage_test__";
     localStorage.setItem(test, test);
     localStorage.removeItem(test);
     return true;
@@ -47,7 +46,10 @@ export function getStorageSize(): number {
   return total;
 }
 
-export function cleanupOldSessions(keepDatasets: string[] = [], maxAge: number = 7 * 24 * 60 * 60 * 1000): void {
+export function cleanupOldSessions(
+  keepDatasets: string[] = [],
+  maxAge: number = 7 * 24 * 60 * 60 * 1000,
+): void {
   if (!isLocalStorageAvailable()) return;
 
   const now = Date.now();
@@ -57,12 +59,12 @@ export function cleanupOldSessions(keepDatasets: string[] = [], maxAge: number =
     if (key.startsWith(STORAGE_PREFIX)) {
       try {
         const data = JSON.parse(localStorage[key]) as { timestamp?: number };
-        const dataset = key.replace(STORAGE_PREFIX, '');
+        const dataset = key.replace(STORAGE_PREFIX, "");
 
         if (
           !keepDatasets.includes(dataset) &&
           data.timestamp &&
-          (now - data.timestamp > maxAge)
+          now - data.timestamp > maxAge
         ) {
           keysToRemove.push(key);
         }
@@ -72,32 +74,32 @@ export function cleanupOldSessions(keepDatasets: string[] = [], maxAge: number =
     }
   }
 
-  keysToRemove.forEach(key => localStorage.removeItem(key));
+  keysToRemove.forEach((key) => localStorage.removeItem(key));
 }
 
-export function validatePersistedState(data: unknown): data is PersistedSessionState {
-  if (!data || typeof data !== 'object' || data === null) {
+export function validatePersistedState(
+  data: unknown,
+): data is PersistedSessionState {
+  if (!data || typeof data !== "object" || data === null) {
     return false;
   }
 
   const obj = data as Record<string, unknown>;
 
-  return (
-    typeof obj.version === 'string' &&
-    typeof obj.dataset === 'string' &&
-    typeof obj.timestamp === 'number' &&
-    obj.state &&
-    typeof obj.state === 'object' &&
-    obj.state !== null
-  );
+  if (typeof obj.version !== "string") return false;
+  if (typeof obj.dataset !== "string") return false;
+  if (typeof obj.timestamp !== "number") return false;
+  if (!obj.state || typeof obj.state !== "object" || obj.state === null)
+    return false;
+
+  return true;
 }
 
 export function saveSessionState(
   dataset: string,
-  state: PersistedSessionState['state']
+  state: PersistedSessionState["state"],
 ): boolean {
   if (!isLocalStorageAvailable()) {
-    console.warn('localStorage not available for state persistence');
     return false;
   }
 
@@ -106,13 +108,12 @@ export function saveSessionState(
       version: STORAGE_VERSION,
       dataset,
       timestamp: Date.now(),
-      state
+      state,
     };
 
     const serialized = JSON.stringify(sessionData);
 
     if (serialized.length > MAX_STORAGE_SIZE / 10) {
-      console.warn('Session state too large for persistence');
       return false;
     }
 
@@ -123,12 +124,14 @@ export function saveSessionState(
     localStorage.setItem(getStorageKey(dataset), serialized);
     return true;
   } catch (error) {
-    console.warn('Failed to save session state:', error);
+    void error;
     return false;
   }
 }
 
-export function loadSessionState(dataset: string): PersistedSessionState['state'] | null {
+export function loadSessionState(
+  dataset: string,
+): PersistedSessionState["state"] | null {
   if (!isLocalStorageAvailable()) return null;
 
   try {
@@ -138,26 +141,23 @@ export function loadSessionState(dataset: string): PersistedSessionState['state'
     const data = JSON.parse(stored);
 
     if (!validatePersistedState(data)) {
-      console.warn('Invalid persisted state format, clearing...');
       localStorage.removeItem(getStorageKey(dataset));
       return null;
     }
 
     if (data.version !== STORAGE_VERSION) {
-      console.warn('Incompatible state version, clearing...');
       localStorage.removeItem(getStorageKey(dataset));
       return null;
     }
 
     if (data.dataset !== dataset) {
-      console.warn('Dataset mismatch in persisted state, clearing...');
       localStorage.removeItem(getStorageKey(dataset));
       return null;
     }
 
     return data.state;
   } catch (error) {
-    console.warn('Failed to load session state:', error);
+    void error;
     localStorage.removeItem(getStorageKey(dataset));
     return null;
   }
@@ -178,5 +178,5 @@ export function clearAllSessionStates(): void {
     }
   }
 
-  keysToRemove.forEach(key => localStorage.removeItem(key));
+  keysToRemove.forEach((key) => localStorage.removeItem(key));
 }

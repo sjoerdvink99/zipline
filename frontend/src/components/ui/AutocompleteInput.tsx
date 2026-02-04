@@ -39,7 +39,7 @@ export function AutocompleteInput({
       .filter(suggestion =>
         suggestion.toLowerCase().includes(value.toLowerCase())
       )
-      .slice(0, 10); // Limit to 10 suggestions
+      .slice(0, 10);
 
     setFilteredSuggestions(filtered);
   }, [value, suggestions]);

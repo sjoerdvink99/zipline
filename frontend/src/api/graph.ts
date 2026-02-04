@@ -56,6 +56,26 @@ export interface NeighborConstraintValidation {
   error?: string;
 }
 
+export interface PathFindingRequest {
+  source_node: string;
+  target_node: string;
+  algorithm?: "shortest" | "k_shortest" | "all_simple" | "all_shortest";
+  max_paths?: number;
+  min_path_length?: number;
+  max_path_length?: number;
+}
+
+export interface PathFindingResponse {
+  success: boolean;
+  paths: string[][];
+  path_nodes: string[];
+  path_edges: Array<{source: string, target: string}>;
+  algorithm_used: string;
+  total_paths: number;
+  computation_time_ms: number;
+  errors?: string[];
+}
+
 export async function findConstrainedPaths(
   params: PathQueryParams
 ): Promise<PathQueryResponse> {
@@ -113,5 +133,15 @@ export async function validateNeighborConstraint(
       value
     }
   });
+  return data;
+}
+
+export async function findPathsBetweenNodes(
+  request: PathFindingRequest
+): Promise<PathFindingResponse> {
+  const { data } = await api.post<PathFindingResponse>(
+    "/api/graph/paths/find",
+    request
+  );
   return data;
 }

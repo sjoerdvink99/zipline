@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import networkx as nx
 
@@ -124,8 +125,6 @@ def is_temporal_value(value: Any) -> bool:
         except ValueError:
             pass
 
-    import re
-
     date_patterns = [
         r"\d{4}-\d{2}-\d{2}",
         r"\d{2}/\d{2}/\d{4}",
@@ -147,8 +146,6 @@ def parse_temporal_value(value: str) -> datetime | None:
         elif "T" in value:
             return datetime.fromisoformat(value)
         else:
-            import re
-
             if re.match(r"\d{4}-\d{2}-\d{2}", value):
                 return datetime.fromisoformat(value)
             elif re.match(r"\d{2}/\d{2}/\d{4}", value):
@@ -267,7 +264,7 @@ def compute_categorical_distribution(
                 for item in value:
                     if item is not None:
                         str_item = str(item).strip()
-                        if str_item:  # Only include non-empty items
+                        if str_item:
                             value_groups[str_item].append(node_id)
                         else:
                             value_groups["[empty string]"].append(node_id)
@@ -275,7 +272,7 @@ def compute_categorical_distribution(
                         value_groups["null"].append(node_id)
         else:
             str_value = str(value).strip()
-            if str_value:  # Only include non-empty strings
+            if str_value:
                 value_groups[str_value].append(node_id)
             else:
                 value_groups["[empty string]"].append(node_id)
@@ -290,7 +287,7 @@ def compute_categorical_distribution(
             }
         )
 
-    values.sort(key=lambda x: x["count"], reverse=True)
+    values.sort(key=lambda x: cast(int, x["count"]), reverse=True)
 
     return {
         "type": "categorical",
@@ -430,7 +427,7 @@ def compute_boolean_distribution(
             }
         )
 
-    values.sort(key=lambda x: x["count"], reverse=True)
+    values.sort(key=lambda x: cast(int, x["count"]), reverse=True)
 
     return {
         "type": "boolean",

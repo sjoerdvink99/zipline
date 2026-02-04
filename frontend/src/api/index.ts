@@ -1,22 +1,20 @@
-// Re-export the main API client and utilities
-export { default as api, isAbortedRequest } from './client';
+export { default as api, isAbortedRequest } from "./client";
+export * from "./data_sources";
 
-// Re-export all dataset-related functions and types
 export type {
   Dataset,
   DatasetType,
   DatasetsResponse,
   LoadDatasetResponse,
-  CurrentDatasetResponse
-} from './datasets';
+  CurrentDatasetResponse,
+} from "./datasets";
 export {
   getDatasets,
   loadDataset,
   getCurrentDataset,
-  switchDataset
-} from './datasets';
+  switchDataset,
+} from "./datasets";
 
-// Re-export all graph-related functions and types
 export type {
   HopConstraint,
   PathQueryParams,
@@ -24,18 +22,16 @@ export type {
   AttributeInfo,
   GraphSchema,
   NeighborValuesResponse,
-  NeighborConstraintValidation
-} from './graph';
+  NeighborConstraintValidation,
+} from "./graph";
 export {
   findConstrainedPaths,
   getGraphSchema,
   getNeighborValues,
-  validateNeighborConstraint
-} from './graph';
+  validateNeighborConstraint,
+} from "./graph";
 
-// Re-export all existing API modules
-export * from './attributes';
-export * from './predicates';
-export * from './patterns';
-export * from './search';
-export * from './predicateComposer';
+export * from "./attributes";
+export * from "./fol";
+export * from "./search";
+export * from "./learning";

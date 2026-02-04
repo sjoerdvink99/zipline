@@ -1,4 +1,4 @@
-import type { ValidationError } from '../../types/predicate';
+import type { ValidationError } from "../../types/fol";
 
 interface ValidationErrorsProps {
   errors: ValidationError[];
@@ -10,12 +10,23 @@ export function ValidationErrors({ errors }: ValidationErrorsProps) {
   return (
     <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
       <div className="flex items-start gap-2">
-        <svg className="w-4 h-4 text-red-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <svg
+          className="w-4 h-4 text-red-500 mt-0.5 shrink-0"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
         </svg>
         <div>
           <h4 className="text-sm font-medium text-red-800 mb-1">
-            Expression Validation ({errors.length} issue{errors.length !== 1 ? 's' : ''})
+            Expression Validation ({errors.length} issue
+            {errors.length !== 1 ? "s" : ""})
           </h4>
           <ul className="space-y-1">
             {errors.map((error, index) => (
@@ -25,7 +36,9 @@ export function ValidationErrors({ errors }: ValidationErrorsProps) {
                   <span className="font-medium capitalize">{error.type}:</span>
                   {error.message}
                   {error.position && (
-                    <span className="text-red-500 font-mono ml-1">(pos: {error.position})</span>
+                    <span className="text-red-500 font-mono ml-1">
+                      (pos: {error.position})
+                    </span>
                   )}
                 </span>
               </li>

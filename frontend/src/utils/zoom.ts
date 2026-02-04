@@ -1,4 +1,4 @@
-import * as d3 from "d3";
+import { zoom, type ZoomBehavior } from "d3-zoom";
 
 export interface ZoomTransform {
   x: number;
@@ -9,9 +9,8 @@ export interface ZoomTransform {
 export function createCanvasZoom(
   scaleExtent: [number, number],
   onZoom: (transform: ZoomTransform) => void
-): d3.ZoomBehavior<HTMLCanvasElement, unknown> {
-  return d3
-    .zoom<HTMLCanvasElement, unknown>()
+): ZoomBehavior<HTMLCanvasElement, unknown> {
+  return zoom<HTMLCanvasElement, unknown>()
     .scaleExtent(scaleExtent)
     .filter((ev) => {
       if (ev.shiftKey) return false;

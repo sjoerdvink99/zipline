@@ -8,12 +8,20 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from core.dataset_manager import DatasetManager
 from core.dependencies import get_dataset_manager
-from models import NodeSearchRequest, PathQueryRequest, SearchResult
+from models import (
+    NodeSearchRequest,
+    PathFindingRequest,
+    PathFindingResponse,
+    PathQueryRequest,
+    SearchResult,
+)
 from services.evaluation.constraint_evaluator import (
     check_path_constraints,
     validate_neighbor_constraint,
 )
+from services.path_finder import PathFinder
 from utils.logging_config import get_logger
+from utils.node_validation import validate_single_node_id
 
 logger = get_logger("api.topology")
 
@@ -25,7 +33,7 @@ def graph_elements(dm: DatasetManager = Depends(get_dataset_manager)) -> dict[st
     G = dm.active
 
     logger.info(
-        "🔍 Graph elements requested",
+        "Graph elements requested",
         extra={
             "graph_nodes": G.number_of_nodes() if G else 0,
             "graph_edges": G.number_of_edges() if G else 0,
@@ -34,7 +42,7 @@ def graph_elements(dm: DatasetManager = Depends(get_dataset_manager)) -> dict[st
     )
 
     if G is None or G.number_of_nodes() == 0:
-        logger.warning("⚠️ No graph data available")
+        logger.warning("No graph data available")
         return {"nodes": [], "edges": [], "graph": dm.active_graph}
 
     nodes = []
@@ -83,7 +91,7 @@ def graph_elements(dm: DatasetManager = Depends(get_dataset_manager)) -> dict[st
 @router.post("/find_paths")
 def find_constrained_paths(
     request: PathQueryRequest, dm: DatasetManager = Depends(get_dataset_manager)
-):
+) -> dict[str, Any]:
     G = dm.active
     if G is None:
         raise HTTPException(400, "No active graph")
@@ -295,13 +303,15 @@ def search_nodes(
 
 
 @router.get("/schema")
-def get_graph_schema(dm: DatasetManager = Depends(get_dataset_manager)):
+def get_graph_schema(
+    dm: DatasetManager = Depends(get_dataset_manager),
+) -> dict[str, Any]:
     G = dm.active
     if G is None:
         raise HTTPException(status_code=404, detail="No graph loaded")
 
-    node_attributes = {}
-    edge_attributes = {}
+    node_attributes: dict[str, dict[str, Any]] = {}
+    edge_attributes: dict[str, dict[str, Any]] = {}
 
     for node_id in G.nodes():
         node_attrs = dict(G.nodes[node_id])
@@ -396,7 +406,7 @@ def get_graph_schema(dm: DatasetManager = Depends(get_dataset_manager)):
 @router.get("/neighbor_values")
 def get_neighbor_values(
     node_ids: str, attribute: str, dm: DatasetManager = Depends(get_dataset_manager)
-):
+) -> dict[str, Any]:
     G = dm.active
     if G is None:
         raise HTTPException(status_code=404, detail="No graph loaded")
@@ -426,6 +436,125 @@ def get_neighbor_values(
     }
 
 
+@router.post("/paths/find")
+async def find_paths_between_nodes(
+    request: PathFindingRequest, dm: DatasetManager = Depends(get_dataset_manager)
+) -> PathFindingResponse:
+    G = dm.active
+    if G is None:
+        return PathFindingResponse(
+            success=False,
+            paths=[],
+            path_nodes=[],
+            path_edges=[],
+            algorithm_used=request.algorithm,
+            total_paths=0,
+            computation_time_ms=0.0,
+            errors=["No active graph loaded"],
+        )
+
+    valid_source = validate_single_node_id(G, request.source_node, "path finding")
+    if valid_source is None:
+        error_msg = f"Source node '{request.source_node}' not found in graph"
+        logger.warning(f"Path finding validation error: {error_msg}")
+        return PathFindingResponse(
+            success=False,
+            paths=[],
+            path_nodes=[],
+            path_edges=[],
+            algorithm_used=request.algorithm,
+            total_paths=0,
+            computation_time_ms=0.0,
+            errors=[error_msg],
+        )
+
+    valid_target = validate_single_node_id(G, request.target_node, "path finding")
+    if valid_target is None:
+        error_msg = f"Target node '{request.target_node}' not found in graph"
+        logger.warning(f"Path finding validation error: {error_msg}")
+        return PathFindingResponse(
+            success=False,
+            paths=[],
+            path_nodes=[],
+            path_edges=[],
+            algorithm_used=request.algorithm,
+            total_paths=0,
+            computation_time_ms=0.0,
+            errors=[error_msg],
+        )
+
+    if valid_source != request.source_node:
+        logger.info(
+            f"Path finding: mapped source '{request.source_node}' → '{valid_source}'"
+        )
+    if valid_target != request.target_node:
+        logger.info(
+            f"Path finding: mapped target '{request.target_node}' → '{valid_target}'"
+        )
+
+    try:
+        path_finder = PathFinder(G)
+        result = path_finder.find_paths_between_nodes(
+            source=valid_source,
+            target=valid_target,
+            algorithm=request.algorithm,
+            max_paths=request.max_paths,
+            min_path_length=request.min_path_length,
+            max_path_length=request.max_path_length,
+        )
+
+        path_edges_dict = [
+            {"source": edge[0], "target": edge[1]} for edge in result.path_edges
+        ]
+
+        logger.info(
+            "Path finding completed",
+            extra={
+                "source": request.source_node,
+                "target": request.target_node,
+                "algorithm": request.algorithm,
+                "paths_found": len(result.paths),
+                "unique_nodes": len(result.path_nodes),
+                "computation_time_ms": result.total_computation_time_ms,
+            },
+        )
+
+        return PathFindingResponse(
+            success=True,
+            paths=result.paths,
+            path_nodes=list(result.path_nodes),
+            path_edges=path_edges_dict,
+            algorithm_used=result.algorithm_used,
+            total_paths=result.max_paths_found,
+            computation_time_ms=result.total_computation_time_ms,
+        )
+
+    except ValueError as e:
+        logger.warning(f"Path finding validation error: {e}")
+        return PathFindingResponse(
+            success=False,
+            paths=[],
+            path_nodes=[],
+            path_edges=[],
+            algorithm_used=request.algorithm,
+            total_paths=0,
+            computation_time_ms=0.0,
+            errors=[str(e)],
+        )
+    except Exception as e:
+        logger.error(f"Path finding unexpected error: {e}")
+        return PathFindingResponse(
+            success=False,
+            paths=[],
+            path_nodes=[],
+            path_edges=[],
+            algorithm_used=request.algorithm,
+            total_paths=0,
+            computation_time_ms=0.0,
+            errors=["Internal server error during path finding"],
+        )
+
+
 @router.get("/validate_neighbor_constraint")
 def validate_neighbor_constraint_endpoint(
     node_ids: str,
@@ -433,8 +562,7 @@ def validate_neighbor_constraint_endpoint(
     operator: str = "=",
     value: str = "",
     dm: DatasetManager = Depends(get_dataset_manager),
-):
-    """Validate neighbor constraints using the constraint evaluator service."""
+) -> dict[str, Any]:
     G = dm.active
     if G is None:
         raise HTTPException(status_code=404, detail="No graph loaded")

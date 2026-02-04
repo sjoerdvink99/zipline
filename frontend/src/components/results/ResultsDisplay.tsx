@@ -1,24 +1,46 @@
-import { useState } from 'react';
-import type { ProjectionResult } from '../../types/predicate';
+import { useState, useMemo } from "react";
+import type { ProjectionResult } from "../../types/fol";
+
+interface NormalizedProjection {
+  primaryNode: string;
+  projectedVariables: Record<string, string[]>;
+}
 
 interface ResultsDisplayProps {
   matchingNodes: string[];
   projections?: ProjectionResult[];
-  resultMode?: 'primary_only' | 'primary_and_projected';
-  onNodeHighlight?: (nodeIds: string[], type: 'primary' | 'projected') => void;
+  resultMode?: "primary_only" | "primary_and_projected";
+  onNodeHighlight?: (nodeIds: string[], type: "primary" | "projected") => void;
 }
 
 export function ResultsDisplay({
   matchingNodes,
   projections = [],
-  resultMode = 'primary_only',
-  onNodeHighlight
+  resultMode = "primary_only",
+  onNodeHighlight,
 }: ResultsDisplayProps) {
-  const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
-  const [displayMode, setDisplayMode] = useState<'primary_only' | 'primary_and_projected'>(resultMode);
+  const [expandedResults, setExpandedResults] = useState<Set<string>>(
+    new Set(),
+  );
+  const [displayMode, setDisplayMode] = useState<
+    "primary_only" | "primary_and_projected"
+  >(resultMode);
 
-  const totalProjected = projections.reduce((total, proj) =>
-    total + Object.values(proj.projected_variables).flat().length, 0);
+  const normalizedProjections = useMemo<NormalizedProjection[]>(
+    () =>
+      projections.map((proj) => ({
+        primaryNode: proj.primaryNode || proj.primary_node || "",
+        projectedVariables:
+          proj.projectedVariables || proj.projected_variables || {},
+      })),
+    [projections],
+  );
+
+  const totalProjected = normalizedProjections.reduce(
+    (total, proj) =>
+      total + Object.values(proj.projectedVariables).flat().length,
+    0,
+  );
 
   const toggleExpanded = (nodeId: string) => {
     const newExpanded = new Set(expandedResults);
@@ -30,7 +52,10 @@ export function ResultsDisplay({
     setExpandedResults(newExpanded);
   };
 
-  const handleNodeClick = (nodeIds: string[], type: 'primary' | 'projected') => {
+  const handleNodeClick = (
+    nodeIds: string[],
+    type: "primary" | "projected",
+  ) => {
     if (onNodeHighlight) {
       onNodeHighlight(nodeIds, type);
     }
@@ -38,7 +63,6 @@ export function ResultsDisplay({
 
   return (
     <div className="space-y-3">
-
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -51,21 +75,21 @@ export function ResultsDisplay({
           {projections.length > 0 && (
             <div className="flex bg-white border border-gray-300 rounded-lg p-1">
               <button
-                onClick={() => setDisplayMode('primary_only')}
+                onClick={() => setDisplayMode("primary_only")}
                 className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  displayMode === 'primary_only'
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'text-gray-600 hover:text-gray-800'
+                  displayMode === "primary_only"
+                    ? "bg-blue-100 text-blue-800"
+                    : "text-gray-600 hover:text-gray-800"
                 }`}
               >
                 Primary Only
               </button>
               <button
-                onClick={() => setDisplayMode('primary_and_projected')}
+                onClick={() => setDisplayMode("primary_and_projected")}
                 className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  displayMode === 'primary_and_projected'
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'text-gray-600 hover:text-gray-800'
+                  displayMode === "primary_and_projected"
+                    ? "bg-amber-100 text-amber-800"
+                    : "text-gray-600 hover:text-gray-800"
                 }`}
               >
                 Primary + Projected
@@ -84,7 +108,7 @@ export function ResultsDisplay({
                 <button
                   key={nodeId}
                   className="px-2 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded text-xs font-mono hover:bg-emerald-200 transition-colors"
-                  onClick={() => handleNodeClick([nodeId], 'primary')}
+                  onClick={() => handleNodeClick([nodeId], "primary")}
                 >
                   {nodeId}
                 </button>
@@ -94,92 +118,115 @@ export function ResultsDisplay({
         </div>
       </div>
 
-      {displayMode === 'primary_and_projected' && projections.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-            <h5 className="text-xs font-semibold text-gray-800 uppercase tracking-wide">
-              Projected Relations ({totalProjected})
-            </h5>
-          </div>
+      {displayMode === "primary_and_projected" &&
+        normalizedProjections.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+              <h5 className="text-xs font-semibold text-gray-800 uppercase tracking-wide">
+                Projected Relations ({totalProjected})
+              </h5>
+            </div>
 
-          <div className="space-y-1 max-h-64 overflow-y-auto border border-amber-200 rounded-lg">
-            {projections.map((projection, index) => {
-              const isExpanded = expandedResults.has(projection.primary_node);
-              const projectedCount = Object.values(projection.projected_variables).flat().length;
+            <div className="space-y-1 max-h-64 overflow-y-auto border border-amber-200 rounded-lg">
+              {normalizedProjections.map((projection, index) => {
+                const isExpanded = expandedResults.has(projection.primaryNode);
+                const projectedCount = Object.values(
+                  projection.projectedVariables,
+                ).flat().length;
 
-              return (
-                <div key={`${projection.primary_node}-${index}`} className="border-b border-amber-100 last:border-b-0">
+                return (
                   <div
-                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-amber-50 transition-colors"
-                    onClick={() => toggleExpanded(projection.primary_node)}
+                    key={`${projection.primaryNode}-${index}`}
+                    className="border-b border-amber-100 last:border-b-0"
                   >
-                    <div className="flex items-center space-x-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                        <button
-                          className="text-emerald-700 hover:text-emerald-900 font-mono text-xs font-medium"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleNodeClick([projection.primary_node], 'primary');
-                          }}
-                        >
-                          {projection.primary_node}
-                        </button>
+                    <div
+                      className="flex items-center justify-between p-3 cursor-pointer hover:bg-amber-50 transition-colors"
+                      onClick={() => toggleExpanded(projection.primaryNode)}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                          <button
+                            className="text-emerald-700 hover:text-emerald-900 font-mono text-xs font-medium"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleNodeClick(
+                                [projection.primaryNode],
+                                "primary",
+                              );
+                            }}
+                          >
+                            {projection.primaryNode}
+                          </button>
+                        </div>
+                        <div className="text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                          → {projectedCount} projected
+                        </div>
                       </div>
-                      <div className="text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                        → {projectedCount} projected
+                      <div className="text-xs text-amber-600">
+                        {isExpanded ? "▲" : "▼"}
                       </div>
                     </div>
-                    <div className="text-xs text-amber-600">
-                      {isExpanded ? '▲' : '▼'}
-                    </div>
+
+                    {isExpanded && (
+                      <div className="px-3 pb-3 bg-amber-50/50">
+                        <div className="space-y-3">
+                          {Object.entries(projection.projectedVariables).map(
+                            ([variable, nodes]) => (
+                              <div key={variable}>
+                                <div className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-2">
+                                  <span className="font-mono bg-amber-200 px-2 py-0.5 rounded">
+                                    {variable}
+                                  </span>
+                                  <span className="text-amber-600 font-normal">
+                                    ({(nodes as string[]).length} nodes)
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {(nodes as string[]).map(
+                                    (node: string, nodeIndex: number) => (
+                                      <button
+                                        key={`${node}-${nodeIndex}`}
+                                        className="px-2 py-1 bg-amber-100 text-amber-800 border border-amber-200 rounded text-xs font-mono hover:bg-amber-200 transition-colors"
+                                        onClick={() =>
+                                          handleNodeClick([node], "projected")
+                                        }
+                                      >
+                                        {node}
+                                      </button>
+                                    ),
+                                  )}
+                                </div>
+                              </div>
+                            ),
+                          )}
+                        </div>
+
+                        <div className="mt-3 pt-2 border-t border-amber-200">
+                          <button
+                            className="text-xs text-amber-700 hover:text-amber-900 underline font-medium"
+                            onClick={() => {
+                              const allProjected = Object.values(
+                                projection.projectedVariables,
+                              ).flat();
+                              handleNodeClick(
+                                [projection.primaryNode, ...allProjected],
+                                "primary",
+                              );
+                            }}
+                          >
+                            ⚡ Highlight complete relation structure
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-
-                  {isExpanded && (
-                    <div className="px-3 pb-3 bg-amber-50/50">
-                      <div className="space-y-3">
-                        {Object.entries(projection.projected_variables).map(([variable, nodes]) => (
-                          <div key={variable}>
-                            <div className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-2">
-                              <span className="font-mono bg-amber-200 px-2 py-0.5 rounded">{variable}</span>
-                              <span className="text-amber-600 font-normal">({nodes.length} nodes)</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {nodes.map((node, nodeIndex) => (
-                                <button
-                                  key={`${node}-${nodeIndex}`}
-                                  className="px-2 py-1 bg-amber-100 text-amber-800 border border-amber-200 rounded text-xs font-mono hover:bg-amber-200 transition-colors"
-                                  onClick={() => handleNodeClick([node], 'projected')}
-                                >
-                                  {node}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="mt-3 pt-2 border-t border-amber-200">
-                        <button
-                          className="text-xs text-amber-700 hover:text-amber-900 underline font-medium"
-                          onClick={() => {
-                            const allProjected = Object.values(projection.projected_variables).flat();
-                            handleNodeClick([projection.primary_node, ...allProjected], 'primary');
-                          }}
-                        >
-                          ⚡ Highlight complete relation structure
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
-
+        )}
     </div>
   );
 }

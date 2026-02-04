@@ -22,7 +22,7 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('GraphBridge Error:', error, errorInfo);
+    console.error('ZipLine Error:', error, errorInfo);
     this.props.onError?.(error, errorInfo);
 
     if (import.meta.env.PROD) {
@@ -35,7 +35,7 @@ class ErrorBoundary extends Component<Props, State> {
       return this.props.fallback || (
         <div className="error-boundary p-8 border border-red-300 bg-red-50 rounded-lg">
           <h2 className="text-lg font-semibold text-red-800 mb-4">
-            Something went wrong in GraphBridge
+            Something went wrong in ZipLine
           </h2>
           <details className="mb-4">
             <summary className="cursor-pointer text-red-700 hover:text-red-900">

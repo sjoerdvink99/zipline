@@ -3,11 +3,7 @@ import axios from "axios";
 const env = import.meta.env?.VITE_API_URL as string | undefined;
 
 function guessBase(): string {
-  if (import.meta.env.DEV) {
-    return '';  // Use proxy via Vite dev server
-  }
-  const { protocol, hostname } = window.location;
-  return `${protocol}//${hostname}:8000`;
+  return "";
 }
 
 const baseURL = env && env.trim().length > 0 ? env : guessBase();

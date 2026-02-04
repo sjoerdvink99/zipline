@@ -28,7 +28,7 @@ export function useNeighborSuggestions({
 
   const targetNodes = useMemo(() => {
     return predicateMatchNodes;
-  }, [predicateMatchNodes, targetPredicateIds]);
+  }, [predicateMatchNodes]);
 
   const shouldFetch = enabled &&
     targetNodes.length > 0 &&

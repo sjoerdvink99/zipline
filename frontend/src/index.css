@@ -2,10 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar styling */
+@layer base {
+  :root {
+    --color-topology: 56 189 248;
+    --color-attribute: 52 211 153;
+    --color-predicate: 167 139 250;
+  }
+
+  body {
+    @apply antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -13,15 +25,13 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
+  @apply bg-gray-200 rounded-full;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  @apply bg-gray-300;
 }
 
-/* Hide scrollbar utility */
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -31,37 +41,24 @@
   display: none;
 }
 
-/* Smooth transitions for interactive elements */
-button,
-select,
-input {
-  transition: all 0.15s ease;
+@layer utilities {
+  .transition-base {
+    @apply transition-all duration-150 ease-out;
+  }
 }
 
-/* Focus ring improvements */
 *:focus-visible {
-  outline: 2px solid #6b7280;
-  outline-offset: 2px;
+  @apply outline-none ring-2 ring-gray-400 ring-offset-1;
 }
 
-/* Selection highlight */
 ::selection {
-  background: #e5e7eb;
-  color: #1f2937;
+  @apply bg-blue-100 text-gray-900;
 }
 
-/* Subtle text rendering improvements */
-body {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* Reset cursor styles - prevent unwanted pointer cursors */
 * {
   cursor: default;
 }
 
-/* Only apply pointer cursor to genuinely clickable elements */
 button,
 [role="button"],
 a,
@@ -70,20 +67,16 @@ input[type="button"],
 input[type="submit"],
 input[type="reset"],
 input[type="checkbox"],
-input[type="radio"] {
+input[type="radio"],
+input[type="range"] {
   cursor: pointer;
 }
 
-/* Text cursor for text inputs */
 input[type="text"],
 input[type="search"],
 input[type="email"],
 input[type="password"],
+input[type="number"],
 textarea {
   cursor: text;
-}
-
-/* Range sliders should have pointer */
-input[type="range"] {
-  cursor: pointer;
 }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HopConstraint(BaseModel):
@@ -38,3 +38,25 @@ class SearchResult(BaseModel):
     match_type: str
     attributes: dict[str, Any]
     highlights: list[str] = []
+
+
+class PathFindingRequest(BaseModel):
+    source_node: str
+    target_node: str
+    algorithm: str = Field(
+        default="k_shortest", pattern="^(shortest|k_shortest|all_simple|all_shortest)$"
+    )
+    max_paths: int = Field(default=10, ge=1, le=1000)
+    min_path_length: int = Field(default=1, ge=1, le=10)
+    max_path_length: int = Field(default=6, ge=2, le=10)
+
+
+class PathFindingResponse(BaseModel):
+    success: bool
+    paths: list[list[str]]
+    path_nodes: list[str]
+    path_edges: list[dict[str, str]]
+    algorithm_used: str
+    total_paths: int
+    computation_time_ms: float
+    errors: list[str] = Field(default_factory=list)

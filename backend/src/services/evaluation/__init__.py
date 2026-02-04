@@ -1,16 +1,10 @@
-"""
-Evaluation Service Module
+from .constraint_evaluator import (
+    check_path_constraints,
+    evaluate_constraint,
+    validate_neighbor_constraint,
+)
 
-This module handles the evaluation of user-composed FOL predicates when the
-"evaluate" button is clicked in the predicate builder.
-
-Key Components:
-- FOLEvaluator: Evaluates compiled FOL expressions
-- UnifiedEvaluator: Unified evaluation interface
-- ConstraintEvaluator: Evaluates constraint-based predicates
-"""
-
-from .fol_evaluator import FOLPredicateEvaluator
-from .unified_evaluator import UnifiedPredicateEvaluator
-
-__all__ = ["FOLPredicateEvaluator", "UnifiedPredicateEvaluator"]
+__all__ = [
+    "check_path_constraints",
+    "validate_neighbor_constraint",
+]

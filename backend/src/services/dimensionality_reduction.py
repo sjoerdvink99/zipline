@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import Any
 
 import networkx as nx
@@ -10,7 +9,6 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 
-warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
 
 
@@ -25,29 +23,23 @@ def extract_node_features(
     feature_names: list[str] = []
     feature_matrix: list[list[float]] = []
 
-    # Get all attributes from all nodes
     all_attributes = set()
     for _node_id, attrs in graph.nodes(data=True):
         all_attributes.update(attrs.keys())
 
-    # Remove metadata attributes
     excluded_attrs = {"node_type", "type", "label", "display_name", "id", "name"}
     all_attributes = all_attributes - excluded_attrs
 
-    # Process each attribute
     for attr in sorted(all_attributes):
-        # Collect all values for this attribute
         attr_values = []
         for node_id in node_ids:
             attrs = graph.nodes[node_id]
             val = attrs.get(attr)
             attr_values.append(val)
 
-        # Skip if all values are None/missing
         if all(v is None for v in attr_values):
             continue
 
-        # Try numerical encoding first
         numerical_values = []
         is_numerical = True
         try:
@@ -59,7 +51,6 @@ def extract_node_features(
                 elif isinstance(val, bool):
                     numerical_values.append(1.0 if val else 0.0)
                 else:
-                    # Try to parse as number
                     try:
                         numerical_values.append(float(str(val)))
                     except ValueError:
@@ -69,19 +60,17 @@ def extract_node_features(
             is_numerical = False
 
         if is_numerical:
-            # Add as numerical feature
             feature_names.append(attr)
             if not feature_matrix:
                 feature_matrix = [[] for _ in node_ids]
             for i, val in enumerate(numerical_values):
                 feature_matrix[i].append(val)
         else:
-            # Categorical encoding - one-hot or label encoding
             unique_values = list(
                 {str(v) if v is not None else "null" for v in attr_values}
             )
 
-            if len(unique_values) <= 20:  # One-hot encode if not too many categories
+            if len(unique_values) <= 20:
                 for unique_val in sorted(unique_values):
                     feature_names.append(f"{attr}_{unique_val}")
                     if not feature_matrix:
@@ -90,7 +79,6 @@ def extract_node_features(
                         val_str = str(val) if val is not None else "null"
                         feature_matrix[i].append(1.0 if val_str == unique_val else 0.0)
             else:
-                # Label encode if too many categories
                 value_to_idx = {
                     val: idx for idx, val in enumerate(sorted(unique_values))
                 }
@@ -100,8 +88,6 @@ def extract_node_features(
                 for i, val in enumerate(attr_values):
                     val_str = str(val) if val is not None else "null"
                     feature_matrix[i].append(float(value_to_idx[val_str]))
-
-    # Skip topological features for attribute-only UMAP analysis
 
     for node_id in node_ids:
         attrs = graph.nodes[node_id]

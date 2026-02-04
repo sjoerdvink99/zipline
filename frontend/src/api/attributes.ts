@@ -87,22 +87,6 @@ export interface DistributionsResponse {
   distributions: Record<string, AttributeDistribution>;
 }
 
-export interface UmapParameters {
-  n_neighbors: number;
-  min_dist: number;
-  n_components: number;
-  metric: string;
-}
-
-export interface UmapResponse {
-  embedding: number[][];
-  node_ids: string[];
-  node_labels: string[];
-  feature_names: string[];
-  n_components: number;
-  parameters: UmapParameters;
-}
-
 type ApiResponse = DistributionsByLabelResponse | DistributionsResponse;
 
 export async function getDistributions(): Promise<DistributionsByLabelResponse> {
@@ -132,18 +116,4 @@ export async function getDistributions(): Promise<DistributionsByLabelResponse> 
       total_unique: 0,
     },
   };
-}
-
-export async function computeUmap(
-  params: Partial<UmapParameters> = {}
-): Promise<UmapResponse> {
-  const { data } = await api.get<UmapResponse>(
-    `${BASE}/umap`,
-    {
-      params: {
-        ...params
-      }
-    }
-  );
-  return data;
 }

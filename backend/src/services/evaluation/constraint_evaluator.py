@@ -1,5 +1,3 @@
-"""Constraint evaluation service for path queries and hop constraints."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -10,15 +8,6 @@ from models import HopConstraint
 
 
 def evaluate_constraint(value: Any, constraint: HopConstraint) -> bool:
-    """Evaluate a single constraint against a value.
-
-    Args:
-        value: The value to test against the constraint
-        constraint: The constraint specification
-
-    Returns:
-        True if the value satisfies the constraint, False otherwise
-    """
     if value is None:
         return False
 
@@ -67,17 +56,6 @@ def evaluate_constraint(value: Any, constraint: HopConstraint) -> bool:
 def check_path_constraints(
     G: nx.Graph, path: list[str], constraints: list[HopConstraint], combine_op: str
 ) -> bool:
-    """Check if a path satisfies the given constraints.
-
-    Args:
-        G: NetworkX graph
-        path: List of node IDs representing the path
-        constraints: List of hop constraints to check
-        combine_op: How to combine constraint results ('intersection', 'union', 'difference')
-
-    Returns:
-        True if the path satisfies all constraints according to combine_op
-    """
     if not constraints:
         return True
 
@@ -137,38 +115,24 @@ def check_path_constraints(
         if len(results) < 2:
             return results[0] if results else True
         return results[0] and not any(results[1:])
-    else:  # intersection
+    else:
         return all(results) if results else True
 
 
 def validate_neighbor_constraint(
     G: nx.Graph, node_ids: list[str], attribute: str, operator: str, value: str
 ) -> dict[str, Any]:
-    """Validate a constraint against neighbors of given nodes.
-
-    Args:
-        G: NetworkX graph
-        node_ids: List of node IDs to check neighbors of
-        attribute: Attribute to check on neighbors
-        operator: Comparison operator ('=', '!=', '>', '>=', '<', '<=')
-        value: Value to compare against
-
-    Returns:
-        Dictionary with validation results
-    """
     if not node_ids:
         return {"valid": False, "matching_neighbors": 0, "error": "No target nodes"}
 
     matching_neighbors = 0
     all_neighbors = set()
 
-    # Collect all neighbors
     for node_id in node_ids:
         if node_id in G.nodes:
             all_neighbors.update(G.neighbors(node_id))
 
     try:
-        # Check each neighbor against the constraint
         for neighbor in all_neighbors:
             if neighbor in G.nodes:
                 node_attrs = dict(G.nodes[neighbor])
