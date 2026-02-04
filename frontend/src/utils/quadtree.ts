@@ -1,4 +1,5 @@
-import * as d3 from "d3";
+import { quadtree, type Quadtree, type QuadtreeLeaf } from "d3-quadtree";
+import { polygonContains } from "d3-polygon";
 
 export interface QuadtreeNode<T> {
   node: T;
@@ -8,21 +9,20 @@ export interface QuadtreeNode<T> {
 
 export function buildQuadtree<T extends { x?: number; y?: number }>(
   nodes: T[]
-): d3.Quadtree<QuadtreeNode<T>> {
+): Quadtree<QuadtreeNode<T>> {
   const points: QuadtreeNode<T>[] = nodes.map((n) => ({
     node: n,
     x: n.x ?? 0,
     y: n.y ?? 0,
   }));
-  return d3
-    .quadtree<QuadtreeNode<T>>()
+  return quadtree<QuadtreeNode<T>>()
     .x((d) => d.x)
     .y((d) => d.y)
     .addAll(points);
 }
 
 export function findNodeAt<T>(
-  quadtree: d3.Quadtree<QuadtreeNode<T>>,
+  qt: Quadtree<QuadtreeNode<T>>,
   x: number,
   y: number,
   radius: number
@@ -30,10 +30,10 @@ export function findNodeAt<T>(
   let found: T | null = null;
   let minDist = radius;
 
-  quadtree.visit((quad, x0, y0, x1, y1) => {
+  qt.visit((quad, x0, y0, x1, y1) => {
     if (!quad.length) {
-      let q: d3.QuadtreeLeaf<QuadtreeNode<T>> | undefined =
-        quad as d3.QuadtreeLeaf<QuadtreeNode<T>>;
+      let q: QuadtreeLeaf<QuadtreeNode<T>> | undefined =
+        quad as QuadtreeLeaf<QuadtreeNode<T>>;
       do {
         const d = q.data;
         const dx = d.x - x;
@@ -54,11 +54,10 @@ export function findNodeAt<T>(
 }
 
 export function findNodesInPolygon<T>(
-  quadtree: d3.Quadtree<QuadtreeNode<T>>,
+  qt: Quadtree<QuadtreeNode<T>>,
   polygon: [number, number][]
 ): T[] {
   const result: T[] = [];
-  const inside = d3.polygonContains;
 
   let minX = Infinity,
     maxX = -Infinity,
@@ -71,13 +70,13 @@ export function findNodesInPolygon<T>(
     maxY = Math.max(maxY, py);
   }
 
-  quadtree.visit((quad, x0, y0, x1, y1) => {
+  qt.visit((quad, x0, y0, x1, y1) => {
     if (!quad.length) {
-      let q: d3.QuadtreeLeaf<QuadtreeNode<T>> | undefined =
-        quad as d3.QuadtreeLeaf<QuadtreeNode<T>>;
+      let q: QuadtreeLeaf<QuadtreeNode<T>> | undefined =
+        quad as QuadtreeLeaf<QuadtreeNode<T>>;
       do {
         const d = q.data;
-        if (inside(polygon, [d.x, d.y])) {
+        if (polygonContains(polygon, [d.x, d.y])) {
           result.push(d.node);
         }
       } while ((q = q.next));

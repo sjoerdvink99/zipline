@@ -1,17 +1,13 @@
 import { create } from "zustand";
 import {
   applyPredicates as apiApplyPredicates,
-  describeSelection,
   inferSelectionPredicates,
   type GeneratedPredicate,
   type PredicateSet,
   type ApplyPredicateSpec,
-  type SelectionMatch,
   type TopologyPredicate,
   type AttributePredicate,
   type DescribeSelectionResponse,
-  type InferredAttributePredicate,
-  type InferredTopologyPredicate,
 } from "../api/predicates";
 import { type SearchResult } from "../api/search";
 import {
@@ -20,9 +16,20 @@ import {
   clearSessionState,
   type PersistedSessionState,
 } from "../utils/persistence";
+import type { FilterItem, NeighborhoodConstraint } from "../types/fol";
+import type { LearnedPredicate } from "../api/learning";
+import {
+  registerCurrentDatasetGetter,
+  getPredicateState,
+  loadPersistedPredicateState,
+} from "./storeRegistry";
 
-
-export type SelectionSource = "topology" | "attribute" | "predicate" | "search" | "umap" | null;
+export type SelectionSource =
+  | "topology"
+  | "attribute"
+  | "predicate"
+  | "search"
+  | null;
 
 export interface SavedPredicate {
   id: string;
@@ -40,12 +47,27 @@ export interface SavedFilterChain {
   createdAt: string;
 }
 
+export interface FavoritedClause {
+  id: string;
+  label: string;
+  predicate: LearnedPredicate;
+  savedAt: string;
+  datasetName: string;
+}
+
+export interface PinnedSelection {
+  id: string;
+  label: string;
+  nodes: string[];
+  colorIndex: number;
+}
+
 interface AnalysisState {
   selectedNodes: string[];
   selectionSource: SelectionSource;
   generatedPredicates: GeneratedPredicate[];
   generatedPredicateSets: PredicateSet[];
-  selectionMatches: SelectionMatch[];
+  selectionMatches: any[];
   activePredicateSetId: string | null;
   activePredicateIds: Set<string>;
   predicateCombineOp: "and" | "or";
@@ -68,7 +90,7 @@ interface AnalysisState {
   isSearching: boolean;
   searchQuery: string;
 
-  activeFilterItems: any[];
+  activeFilterItems: FilterItem[];
   activeFilterOperations: Record<string, "and" | "or" | "not">;
 
   highlightedNodes: Set<string>;
@@ -79,8 +101,24 @@ interface AnalysisState {
     source: SelectionSource;
     timestamp: number;
   }>;
-  crossSpaceHighlights: Map<string, { nodes: string[]; color: string; label: string }>;
+  crossSpaceHighlights: Map<
+    string,
+    { nodes: string[]; color: string; label: string }
+  >;
 
+  pathAnchorNodes: string[];
+  pathSelection: {
+    isActive: boolean;
+    paths: string[][];
+    pathNodes: Set<string>;
+    pathEdges: Array<{ source: string; target: string }>;
+  };
+
+  contrastMode: boolean;
+  contrastNodes: string[];
+  activeSlot: "positive" | "negative";
+
+  pinnedSelections: PinnedSelection[];
 
   setSelection: (nodes: string[], source: SelectionSource) => void;
   clearSelection: () => void;
@@ -97,17 +135,21 @@ interface AnalysisState {
       Pick<SavedPredicate, "name" | "combineOp"> & {
         predicates: GeneratedPredicate[];
       }
-    >
+    >,
   ) => void;
   reorderSavedPredicates: (fromIndex: number, toIndex: number) => void;
   applySavedPredicate: (id: string) => void;
-  saveFilterChain: (name: string, predicateIds: string[], setOperations: Record<string, "and" | "or" | "not">) => void;
+  saveFilterChain: (
+    name: string,
+    predicateIds: string[],
+    setOperations: Record<string, "and" | "or" | "not">,
+  ) => void;
   loadFilterChain: (id: string) => void;
   removeSavedFilterChain: (id: string) => void;
   getSavedFilterChains: () => SavedFilterChain[];
   generatePredicatesForSelection: (
     nodes?: string[],
-    source?: SelectionSource
+    source?: SelectionSource,
   ) => Promise<void>;
   applyActivePredicates: () => Promise<string[]>;
   setCurrentDataset: (dataset: string) => void;
@@ -121,11 +163,11 @@ interface AnalysisState {
   setSearchResults: (results: SearchResult[]) => void;
   setSearching: (isSearching: boolean) => void;
   setSearchQuery: (query: string) => void;
-  selectFromSearch: (nodeId: string) => void;
+  selectFromSearch: (nodeId: string, addToSelection?: boolean) => void;
 
-  addFilterItem: (item: any) => void;
+  addFilterItem: (item: FilterItem) => void;
   removeFilterItem: (id: string) => void;
-  updateFilterItem: (id: string, updates: any) => void;
+  updateFilterItem: (id: string, updates: Partial<FilterItem>) => void;
   setFilterOperation: (id: string, operation: "and" | "or" | "not") => void;
   clearFilterChain: () => void;
 
@@ -134,19 +176,59 @@ interface AnalysisState {
   setPreviewSelection: (nodes: string[], enable: boolean) => void;
   commitPreviewSelection: (source: SelectionSource) => void;
   cancelPreviewSelection: () => void;
-  addCrossSpaceHighlight: (id: string, nodes: string[], color: string, label: string) => void;
+  addCrossSpaceHighlight: (
+    id: string,
+    nodes: string[],
+    color: string,
+    label: string,
+  ) => void;
   removeCrossSpaceHighlight: (id: string) => void;
   clearCrossSpaceHighlights: () => void;
-  getSelectionHistory: () => Array<{nodes: string[], source: SelectionSource, timestamp: number}>;
+  getSelectionHistory: () => Array<{
+    nodes: string[];
+    source: SelectionSource;
+    timestamp: number;
+  }>;
   undoSelection: () => void;
+
+  setPredicateMatchNodes: (nodes: string[]) => void;
+  clearPredicateMatches: () => void;
+
+  setPathAnchorNodes: (nodes: string[]) => void;
+  clearPathSelection: () => void;
+  setPathResults: (result: {
+    isActive: boolean;
+    paths: string[][];
+    pathNodes: Set<string>;
+    pathEdges: Array<{ source: string; target: string }>;
+  }) => void;
+
+  enterContrastMode: () => void;
+  exitContrastMode: () => void;
+  setContrastNodes: (nodes: string[]) => void;
+  setActiveSlot: (slot: "positive" | "negative") => void;
+  removeSharedFromContrast: () => void;
+
+  pinSelection: (label?: string) => void;
+  unpinSelection: (id: string) => void;
+  clearPinnedSelections: () => void;
+  renamePinnedSelection: (id: string, label: string) => void;
+  loadPinnedSelection: (id: string) => void;
+  applySetOperation: (op: "intersection" | "union" | "difference", pinAId: string, pinBId: string) => void;
+
+  favoritedClauses: FavoritedClause[];
+  addFavoriteClause: (predicate: LearnedPredicate) => void;
+  removeFavoriteClause: (id: string) => void;
+  isFavoriteClause: (fol_expression: string) => boolean;
 
   saveSessionState: () => void;
   loadSessionState: () => boolean;
   clearSessionState: () => void;
 }
 
-const SAVED_PREDICATES_KEY_PREFIX = "graphbridge_saved_predicates_";
-const SAVED_FILTER_CHAINS_KEY_PREFIX = "graphbridge_saved_filter_chains_";
+const SAVED_PREDICATES_KEY_PREFIX = "zipline_saved_predicates_";
+const SAVED_FILTER_CHAINS_KEY_PREFIX = "zipline_saved_filter_chains_";
+const FAVORITED_CLAUSES_KEY_PREFIX = "zipline_favorites_";
 
 let currentGenerationRequestId = 0;
 
@@ -155,47 +237,85 @@ function loadSavedPredicates(dataset: string): SavedPredicate[] {
     const stored = localStorage.getItem(SAVED_PREDICATES_KEY_PREFIX + dataset);
     return stored ? JSON.parse(stored) : [];
   } catch (err) {
-    console.warn('Failed to load saved predicates:', err);
+    void err;
     return [];
   }
 }
 
 function persistSavedPredicates(
   dataset: string,
-  predicates: SavedPredicate[]
+  predicates: SavedPredicate[],
 ): void {
   try {
     localStorage.setItem(
       SAVED_PREDICATES_KEY_PREFIX + dataset,
-      JSON.stringify(predicates)
+      JSON.stringify(predicates),
     );
   } catch (err) {
-    console.warn('Failed to persist saved predicates:', err);
+    void err;
   }
 }
 
 function loadSavedFilterChains(dataset: string): SavedFilterChain[] {
   try {
-    const stored = localStorage.getItem(SAVED_FILTER_CHAINS_KEY_PREFIX + dataset);
+    const stored = localStorage.getItem(
+      SAVED_FILTER_CHAINS_KEY_PREFIX + dataset,
+    );
     return stored ? JSON.parse(stored) : [];
   } catch (err) {
-    console.warn('Failed to load saved filter chains:', err);
+    void err;
     return [];
   }
 }
 
 function persistSavedFilterChains(
   dataset: string,
-  filterChains: SavedFilterChain[]
+  filterChains: SavedFilterChain[],
 ): void {
   try {
     localStorage.setItem(
       SAVED_FILTER_CHAINS_KEY_PREFIX + dataset,
-      JSON.stringify(filterChains)
+      JSON.stringify(filterChains),
     );
   } catch (err) {
-    console.warn('Failed to persist saved filter chains:', err);
+    void err;
   }
+}
+
+function loadFavoritedClauses(dataset: string): FavoritedClause[] {
+  try {
+    const stored = localStorage.getItem(FAVORITED_CLAUSES_KEY_PREFIX + dataset);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistFavoritedClauses(
+  dataset: string,
+  clauses: FavoritedClause[],
+): void {
+  try {
+    localStorage.setItem(
+      FAVORITED_CLAUSES_KEY_PREFIX + dataset,
+      JSON.stringify(clauses),
+    );
+  } catch {
+  }
+}
+
+function deriveClauseLabel(fol_expression: string): string {
+  const ascii = fol_expression
+    .replace(/∃/g, "exists")
+    .replace(/∀/g, "forall")
+    .replace(/∧/g, "and")
+    .replace(/∨/g, "or")
+    .replace(/¬/g, "not")
+    .replace(/≥/g, ">=")
+    .replace(/≤/g, "<=")
+    .replace(/≠/g, "!=")
+    .replace(/∈/g, "in");
+  return ascii.length > 40 ? ascii.slice(0, 40) + "…" : ascii;
 }
 
 function generateUniqueId(): string {
@@ -215,7 +335,7 @@ function formatPredicateName(predicate: GeneratedPredicate): string {
   const attr = predicate.attribute.replace(/_/g, " ");
   if (predicate.operator === "between" && predicate.value2 !== undefined) {
     return `${labelPrefix}${attr} [${Number(predicate.value).toFixed(1)}-${Number(
-      predicate.value2
+      predicate.value2,
     ).toFixed(1)}]`;
   }
   if (predicate.operator === "=") {
@@ -226,7 +346,7 @@ function formatPredicateName(predicate: GeneratedPredicate): string {
 
 function labelScopesMatch(
   scope1?: string | string[],
-  scope2?: string | string[]
+  scope2?: string | string[],
 ): boolean {
   if (!scope1 && !scope2) return true;
   if (!scope1 || !scope2) return false;
@@ -256,12 +376,13 @@ const initialState = {
   selectionSource: null as SelectionSource,
   generatedPredicates: [] as GeneratedPredicate[],
   generatedPredicateSets: [] as PredicateSet[],
-  selectionMatches: [] as SelectionMatch[],
+  selectionMatches: [] as any[],
   activePredicateSetId: null as string | null,
   activePredicateIds: new Set<string>(),
   predicateCombineOp: "and" as const,
-  savedPredicates: loadSavedPredicates("default"),
-  savedFilterChains: loadSavedFilterChains("default"),
+  savedPredicates: [] as SavedPredicate[],
+  savedFilterChains: [] as SavedFilterChain[],
+  favoritedClauses: [] as FavoritedClause[],
   predicateMatchNodes: [] as string[],
   stagedPredicates: [] as GeneratedPredicate[],
   stagedCombineOp: "and" as const,
@@ -274,38 +395,64 @@ const initialState = {
 
   isGeneratingPredicates: false,
   isApplyingPredicates: false,
-  currentDataset: "default",
+  currentDataset: "bron_threat_intel",
 
   searchResults: [] as SearchResult[],
   isSearching: false,
   searchQuery: "",
 
-  activeFilterItems: [] as any[],
+  activeFilterItems: [] as FilterItem[],
   activeFilterOperations: {} as Record<string, "and" | "or" | "not">,
 
   highlightedNodes: new Set<string>(),
   previewSelection: [] as string[],
   isPreviewMode: false,
-  selectionHistory: [] as Array<{nodes: string[], source: SelectionSource, timestamp: number}>,
-  crossSpaceHighlights: new Map<string, { nodes: string[]; color: string; label: string }>(),
+  selectionHistory: [] as Array<{
+    nodes: string[];
+    source: SelectionSource;
+    timestamp: number;
+  }>,
+  crossSpaceHighlights: new Map<
+    string,
+    { nodes: string[]; color: string; label: string }
+  >(),
 
+  pathAnchorNodes: [] as string[],
+  pathSelection: {
+    isActive: false,
+    paths: [] as string[][],
+    pathNodes: new Set<string>(),
+    pathEdges: [] as Array<{ source: string; target: string }>,
+  },
+
+  contrastMode: false,
+  contrastNodes: [] as string[],
+  activeSlot: "negative" as "positive" | "negative",
+
+  pinnedSelections: [] as PinnedSelection[],
 };
 
 export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   ...initialState,
 
   setSelection: (nodes, source) => {
+    if (get().contrastMode && get().activeSlot === "negative" && nodes.length > 0) {
+      set({ contrastNodes: nodes });
+      return;
+    }
+
     const { selectedNodes, selectionHistory } = get();
 
     const newHistoryEntry = {
       nodes: selectedNodes.slice(),
       source: get().selectionSource,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
-    const updatedHistory = selectedNodes.length > 0
-      ? [newHistoryEntry, ...selectionHistory.slice(0, 9)] // Keep last 10
-      : selectionHistory;
+    const updatedHistory =
+      selectedNodes.length > 0
+        ? [newHistoryEntry, ...selectionHistory.slice(0, 9)]
+        : selectionHistory;
 
     if (nodes.length === 0) {
       set({
@@ -343,7 +490,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         previewSelection: [],
         crossSpaceHighlights: new Map(),
         highlightedNodes: new Set(),
-    });
+      });
     }
 
     if (nodes.length > 0) {
@@ -368,15 +515,15 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       previewSelection: [],
       isPreviewMode: false,
       crossSpaceHighlights: new Map(),
+      contrastMode: false,
+      contrastNodes: [],
     });
   },
 
   selectPredicateSet: (setId: string | null) => {
     const { generatedPredicateSets, nodePredicateSets } = get();
     const allSets = [...generatedPredicateSets, ...nodePredicateSets];
-    const selectedSet = setId
-      ? allSets.find((s) => s.id === setId)
-      : null;
+    const selectedSet = setId ? allSets.find((s) => s.id === setId) : null;
 
     if (selectedSet) {
       set({
@@ -444,7 +591,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       const activeSet = allSets.find((s) => s.id === activePredicateSetId);
       if (activeSet) {
         activePredicates = activeSet.predicates.filter((p) =>
-          activePredicateIds.has(p.id)
+          activePredicateIds.has(p.id),
         );
         combineOp = activeSet.combine_op;
       }
@@ -453,7 +600,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     if (activePredicates.length === 0) {
       const allPredicates = [...generatedPredicates, ...nodePredicates];
       activePredicates = allPredicates.filter((p) =>
-        activePredicateIds.has(p.id)
+        activePredicateIds.has(p.id),
       );
     }
 
@@ -477,35 +624,53 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
     const filterItem = {
       id: `attr-${predicate.id}`,
-      type: 'attribute',
+      type: "attribute",
       predicate: predicate,
       description: formatPredicateName(predicate),
-      nodeTypes: predicate.applicable_node_types || (predicate.label_scope ? (Array.isArray(predicate.label_scope) ? predicate.label_scope : [predicate.label_scope]) : undefined)
+      nodeTypes:
+        predicate.applicable_node_types ||
+        (predicate.label_scope
+          ? Array.isArray(predicate.label_scope)
+            ? predicate.label_scope
+            : [predicate.label_scope]
+          : undefined),
     };
 
-    window.dispatchEvent(new CustomEvent('gb:add-filter-item', { detail: filterItem }));
+    window.dispatchEvent(
+      new CustomEvent("gb:add-filter-item", { detail: filterItem }),
+    );
 
-    if (predicate.operator === "between" && predicate.attribute_type === "numeric") {
+    if (
+      predicate.operator === "between" &&
+      predicate.attribute_type === "numeric"
+    ) {
       const existingIdx = savedPredicates.findIndex(
         (sp) =>
           sp.predicates.length === 1 &&
           sp.predicates[0].attribute === predicate.attribute &&
           sp.predicates[0].operator === "between" &&
-          labelScopesMatch(sp.predicates[0].label_scope, predicate.label_scope)
+          labelScopesMatch(sp.predicates[0].label_scope, predicate.label_scope),
       );
 
       if (existingIdx !== -1) {
         const existing = savedPredicates[existingIdx];
         const existingPred = existing.predicates[0];
 
-        const newMin = Math.min(Number(existingPred.value), Number(predicate.value));
-        const newMax = Math.max(Number(existingPred.value2), Number(predicate.value2));
+        const newMin = Math.min(
+          Number(existingPred.value),
+          Number(predicate.value),
+        );
+        const newMax = Math.max(
+          Number(existingPred.value2),
+          Number(predicate.value2),
+        );
 
         const mergedPredicate: GeneratedPredicate = {
           ...existingPred,
           value: newMin,
           value2: newMax,
-          match_count: (existingPred.match_count || 0) + (predicate.match_count || 0),
+          match_count:
+            (existingPred.match_count || 0) + (predicate.match_count || 0),
         };
 
         const mergedSaved: SavedPredicate = {
@@ -545,7 +710,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   updateSavedPredicate: (id, updates) => {
     const { savedPredicates, currentDataset } = get();
     const updated = savedPredicates.map((p) =>
-      p.id === id ? { ...p, ...updates } : p
+      p.id === id ? { ...p, ...updates } : p,
     );
     set({ savedPredicates: updated });
     persistSavedPredicates(currentDataset, updated);
@@ -587,7 +752,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
           generatedPredicateSets: [],
           selectionMatches: [],
           activePredicateSetId: null,
-            descriptiveResponse: null,
+          descriptiveResponse: null,
         });
       } else {
         set({
@@ -597,13 +762,13 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         });
       }
     } catch (err) {
-      console.error('Failed to apply saved predicate:', err);
+      void err;
     } finally {
       set({ isApplyingPredicates: false });
     }
   },
 
-  generatePredicatesForSelection: async (nodes, _source) => {
+  generatePredicatesForSelection: async (nodes) => {
     const selectedNodes = nodes ?? get().selectedNodes;
     if (selectedNodes.length === 0) return;
 
@@ -622,26 +787,31 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
       if (requestId !== currentGenerationRequestId) return;
 
-      // Convert inferred predicates to the legacy format for compatibility
-      const convertedTopologyPredicates: TopologyPredicate[] = result.topology_predicates.map((tp, idx) => ({
-        id: `topo_${idx}_${Date.now()}`,
-        attribute: tp.metric,
-        operator: tp.operator,
-        value: tp.threshold,
-        description: tp.fol_expression,
-        applicable_nodes: tp.matching_nodes,
-      }));
+      const convertedTopologyPredicates: TopologyPredicate[] =
+        result.topology_predicates.map((tp, idx) => ({
+          id: `topo_${idx}_${Date.now()}`,
+          attribute: tp.metric,
+          operator: tp.operator,
+          value: tp.threshold,
+          description: tp.fol_expression,
+          applicable_nodes: tp.matching_nodes,
+        }));
 
-      const convertedAttributePredicates: AttributePredicate[] = result.attribute_predicates.map((ap, idx) => ({
-        id: `attr_${idx}_${Date.now()}`,
-        attribute: ap.attribute,
-        operator: ap.operator,
-        value: ap.value,
-        attribute_type: typeof ap.value === 'number' ? 'numeric' :
-                      typeof ap.value === 'boolean' ? 'boolean' : 'categorical',
-        description: ap.fol_expression,
-        applicable_nodes: ap.matching_nodes,
-      }));
+      const convertedAttributePredicates: AttributePredicate[] =
+        result.attribute_predicates.map((ap, idx) => ({
+          id: `attr_${idx}_${Date.now()}`,
+          attribute: ap.attribute,
+          operator: ap.operator,
+          value: ap.value,
+          attribute_type:
+            typeof ap.value === "number"
+              ? "numeric"
+              : typeof ap.value === "boolean"
+                ? "boolean"
+                : "categorical",
+          description: ap.fol_expression,
+          applicable_nodes: ap.matching_nodes,
+        }));
 
       set({
         generatedPredicates: [],
@@ -655,7 +825,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
         descriptiveResponse: {
           selection_count: selectedNodes.length,
-          total_nodes: 0, // Backend will populate this
+          total_nodes: 0,
           node_type_distribution: {},
           topology_predicates: convertedTopologyPredicates,
           attribute_predicates: convertedAttributePredicates,
@@ -663,9 +833,8 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         topologyPredicates: convertedTopologyPredicates,
         attributePredicates: convertedAttributePredicates,
       });
-
     } catch (err) {
-      console.error('Failed to generate descriptive predicates:', err);
+      void err;
       if (requestId === currentGenerationRequestId) {
         set({
           descriptiveResponse: null,
@@ -698,7 +867,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       const activeSet = allSets.find((s) => s.id === activePredicateSetId);
       if (activeSet) {
         activePredicates = activeSet.predicates.filter((p) =>
-          activePredicateIds.has(p.id)
+          activePredicateIds.has(p.id),
         );
       }
     }
@@ -706,7 +875,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     if (activePredicates.length === 0) {
       const allPredicates = [...generatedPredicates, ...nodePredicates];
       activePredicates = allPredicates.filter((p) =>
-        activePredicateIds.has(p.id)
+        activePredicateIds.has(p.id),
       );
     }
 
@@ -726,7 +895,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       set({ predicateMatchNodes: result.matching_node_ids });
       return result.matching_node_ids;
     } catch (err) {
-      console.error('Failed to apply predicates:', err);
+      void err;
       set({ predicateMatchNodes: [] });
       return [];
     } finally {
@@ -752,26 +921,28 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   loadFilterChain: (id) => {
     const { savedFilterChains, savedPredicates } = get();
-    const filterChain = savedFilterChains.find(fc => fc.id === id);
+    const filterChain = savedFilterChains.find((fc) => fc.id === id);
     if (!filterChain) return;
 
     const validPredicates = filterChain.predicateIds
-      .map(predId => savedPredicates.find(sp => sp.id === predId))
+      .map((predId) => savedPredicates.find((sp) => sp.id === predId))
       .filter((pred): pred is SavedPredicate => pred !== undefined);
 
     if (validPredicates.length === 0) return;
 
     set({
       savedPredicates: [
-        ...savedPredicates.filter(sp => !validPredicates.some(vp => vp.id === sp.id)),
-        ...validPredicates
-      ]
+        ...savedPredicates.filter(
+          (sp) => !validPredicates.some((vp) => vp.id === sp.id),
+        ),
+        ...validPredicates,
+      ],
     });
   },
 
   removeSavedFilterChain: (id) => {
     const { savedFilterChains, currentDataset } = get();
-    const updated = savedFilterChains.filter(fc => fc.id !== id);
+    const updated = savedFilterChains.filter((fc) => fc.id !== id);
     set({ savedFilterChains: updated });
     persistSavedFilterChains(currentDataset, updated);
   },
@@ -785,6 +956,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       currentDataset: dataset,
       savedPredicates: loadSavedPredicates(dataset),
       savedFilterChains: loadSavedFilterChains(dataset),
+      favoritedClauses: loadFavoritedClauses(dataset),
       selectedNodes: [],
       selectionSource: null,
       generatedPredicates: [],
@@ -818,6 +990,8 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       stagedPredicates: [],
       isGeneratingPredicates: false,
       isApplyingPredicates: false,
+      contrastMode: false,
+      contrastNodes: [],
     });
   },
 
@@ -829,7 +1003,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         f.attribute === predicate.attribute &&
         f.operator === predicate.operator &&
         f.value === predicate.value &&
-        f.value2 === predicate.value2
+        f.value2 === predicate.value2,
     );
 
     if (exists) return;
@@ -900,7 +1074,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
           generatedPredicateSets: [],
           selectionMatches: [],
           activePredicateSetId: null,
-            descriptiveResponse: null,
+          descriptiveResponse: null,
         });
       } else {
         set({
@@ -910,14 +1084,11 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         });
       }
     } catch (err) {
-      console.error('Failed to apply staged predicates:', err);
+      void err;
     } finally {
       set({ isApplyingPredicates: false });
     }
   },
-
-
-
 
   setSearchResults: (results) => {
     set({ searchResults: results });
@@ -931,7 +1102,27 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     set({ searchQuery: query });
   },
 
-  selectFromSearch: (nodeId) => {
+  selectFromSearch: (nodeId, addToSelection = false) => {
+    const { contrastMode, activeSlot, selectedNodes } = get();
+
+    if (contrastMode && activeSlot === "negative") {
+      const selectedSet = new Set(selectedNodes);
+      const node = selectedSet.has(nodeId) ? [] : [nodeId];
+      set({
+        contrastNodes: node.length > 0 ? node : [nodeId],
+        searchQuery: "",
+        searchResults: [],
+      });
+      return;
+    }
+
+    if (addToSelection && selectedNodes.length > 0 && !new Set(selectedNodes).has(nodeId)) {
+      const newNodes = [...selectedNodes, nodeId];
+      set({ searchQuery: "", searchResults: [] });
+      get().setSelection(newNodes, "search");
+      return;
+    }
+
     set({
       selectedNodes: [nodeId],
       selectionSource: "search",
@@ -958,34 +1149,34 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   removeFilterItem: (id) => {
     const { activeFilterItems, activeFilterOperations } = get();
-    const updatedItems = activeFilterItems.filter(item => item.id !== id);
+    const updatedItems = activeFilterItems.filter((item) => item.id !== id);
     const updatedOperations = { ...activeFilterOperations };
     delete updatedOperations[id];
     set({
       activeFilterItems: updatedItems,
-      activeFilterOperations: updatedOperations
+      activeFilterOperations: updatedOperations,
     });
   },
 
   updateFilterItem: (id, updates) => {
     const { activeFilterItems } = get();
-    const updatedItems = activeFilterItems.map(item =>
-      item.id === id ? { ...item, ...updates } : item
-    );
+    const updatedItems = activeFilterItems.map((item) =>
+      item.id === id ? { ...item, ...updates } : item,
+    ) as FilterItem[];
     set({ activeFilterItems: updatedItems });
   },
 
   setFilterOperation: (id, operation) => {
     const { activeFilterOperations } = get();
     set({
-      activeFilterOperations: { ...activeFilterOperations, [id]: operation }
+      activeFilterOperations: { ...activeFilterOperations, [id]: operation },
     });
   },
 
   clearFilterChain: () => {
     set({
       activeFilterItems: [],
-      activeFilterOperations: {}
+      activeFilterOperations: {},
     });
   },
 
@@ -1000,7 +1191,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   setPreviewSelection: (nodes, enable) => {
     set({
       previewSelection: nodes,
-      isPreviewMode: enable
+      isPreviewMode: enable,
     });
   },
 
@@ -1014,7 +1205,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   cancelPreviewSelection: () => {
     set({
       previewSelection: [],
-      isPreviewMode: false
+      isPreviewMode: false,
     });
   },
 
@@ -1073,26 +1264,22 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   saveSessionState: () => {
     const state = get();
 
-    let predicateState = { predicates: [], constraints: [], setOperations: {} };
-    try {
-      if (typeof window !== 'undefined' && (window as any).__predicateStore) {
-        const predicateStoreState = (window as any).__predicateStore.getState();
-        predicateState = {
-          predicates: predicateStoreState.predicates || [],
-          constraints: predicateStoreState.constraints || [],
-          setOperations: predicateStoreState.setOperations || {}
-        };
-      }
-    } catch (error) {
-      console.warn('Failed to access predicate store:', error);
-    }
+    const rawPredicateState = getPredicateState();
+    const predicateState = {
+      predicates: rawPredicateState.predicates as FilterItem[],
+      constraints: rawPredicateState.constraints as NeighborhoodConstraint[],
+      setOperations: rawPredicateState.setOperations as Record<
+        string,
+        "and" | "or" | "not"
+      >,
+    };
 
-    const sessionState: PersistedSessionState['state'] = {
+    const sessionState: PersistedSessionState["state"] = {
       selectedNodes: state.selectedNodes,
       selectionSource: state.selectionSource,
       activeFilterItems: state.activeFilterItems,
       activeFilterOperations: state.activeFilterOperations,
-      ...predicateState
+      ...predicateState,
     };
 
     saveSessionState(state.currentDataset, sessionState);
@@ -1105,23 +1292,25 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     if (persistedState) {
       set({
         selectedNodes: persistedState.selectedNodes || [],
-        selectionSource: persistedState.selectionSource || null,
+        selectionSource:
+          (persistedState.selectionSource as SelectionSource) || null,
         activeFilterItems: persistedState.activeFilterItems || [],
         activeFilterOperations: persistedState.activeFilterOperations || {},
       });
 
-      try {
-        if (typeof window !== 'undefined' && (window as any).__predicateStore && persistedState.predicates) {
-          const predicateStore = (window as any).__predicateStore.getState();
-          predicateStore.loadPredicateState();
-        }
-      } catch (error) {
-        console.warn('Failed to load predicate state:', error);
+      if (persistedState.predicates) {
+        loadPersistedPredicateState();
       }
 
-      if (persistedState.selectedNodes && persistedState.selectedNodes.length > 0) {
+      if (
+        persistedState.selectedNodes &&
+        persistedState.selectedNodes.length > 0
+      ) {
         setTimeout(() => {
-          get().generatePredicatesForSelection(persistedState.selectedNodes, persistedState.selectionSource);
+          get().generatePredicatesForSelection(
+            persistedState.selectedNodes,
+            persistedState.selectionSource as SelectionSource,
+          );
         }, 100);
       }
 
@@ -1135,13 +1324,234 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     const { currentDataset } = get();
     clearSessionState(currentDataset);
   },
+
+  addFavoriteClause: (predicate) => {
+    const { favoritedClauses, currentDataset } = get();
+    const alreadyExists = favoritedClauses.some(
+      (c) => c.predicate.fol_expression === predicate.fol_expression,
+    );
+    if (alreadyExists) return;
+    const clause: FavoritedClause = {
+      id: crypto.randomUUID(),
+      label: deriveClauseLabel(predicate.fol_expression),
+      predicate,
+      savedAt: new Date().toISOString(),
+      datasetName: currentDataset,
+    };
+    const updated = [clause, ...favoritedClauses];
+    set({ favoritedClauses: updated });
+    persistFavoritedClauses(currentDataset, updated);
+  },
+
+  removeFavoriteClause: (id) => {
+    const { favoritedClauses, currentDataset } = get();
+    const updated = favoritedClauses.filter((c) => c.id !== id);
+    set({ favoritedClauses: updated });
+    persistFavoritedClauses(currentDataset, updated);
+  },
+
+  isFavoriteClause: (fol_expression) => {
+    return get().favoritedClauses.some(
+      (c) => c.predicate.fol_expression === fol_expression,
+    );
+  },
+
+  pinSelection: (label) => {
+    const { selectedNodes, pathAnchorNodes, pinnedSelections } = get();
+    if (selectedNodes.length === 0) return;
+
+    const colorIndex = pinnedSelections.length % 4;
+    const autoLabel =
+      label ??
+      (pathAnchorNodes.length >= 2
+        ? `${pathAnchorNodes[0]} → ${pathAnchorNodes[pathAnchorNodes.length - 1]}`
+        : `Selection (${selectedNodes.length} nodes)`);
+
+    const pin: PinnedSelection = {
+      id: crypto.randomUUID(),
+      label: autoLabel,
+      nodes: [...selectedNodes],
+      colorIndex,
+    };
+
+    set({
+      pinnedSelections: [...pinnedSelections, pin],
+      selectedNodes: [],
+      selectionSource: null,
+      pathAnchorNodes: [],
+      pathSelection: {
+        isActive: false,
+        paths: [],
+        pathNodes: new Set(),
+        pathEdges: [],
+      },
+      generatedPredicates: [],
+      generatedPredicateSets: [],
+      selectionMatches: [],
+      activePredicateSetId: null,
+      activePredicateIds: new Set(),
+      predicateMatchNodes: [],
+      nodePredicates: [],
+      nodePredicateSets: [],
+      descriptiveResponse: null,
+    });
+  },
+
+  unpinSelection: (id) => {
+    const { pinnedSelections } = get();
+    set({ pinnedSelections: pinnedSelections.filter((p) => p.id !== id) });
+  },
+
+  clearPinnedSelections: () => {
+    set({ pinnedSelections: [] });
+  },
+
+  renamePinnedSelection: (id, label) => {
+    const { pinnedSelections } = get();
+    set({
+      pinnedSelections: pinnedSelections.map((p) =>
+        p.id === id ? { ...p, label } : p,
+      ),
+    });
+  },
+
+  loadPinnedSelection: (id) => {
+    const { pinnedSelections } = get();
+    const pin = pinnedSelections.find((p) => p.id === id);
+    if (!pin) return;
+    get().setSelection(pin.nodes, "topology");
+  },
+
+  applySetOperation: (op, pinAId, pinBId) => {
+    const { pinnedSelections } = get();
+    const pinA = pinnedSelections.find((p) => p.id === pinAId);
+    const pinB = pinnedSelections.find((p) => p.id === pinBId);
+    if (!pinA || !pinB) return;
+
+    const setB = new Set(pinB.nodes);
+    let result: string[];
+
+    if (op === "intersection") {
+      result = pinA.nodes.filter((n) => setB.has(n));
+    } else if (op === "union") {
+      result = Array.from(new Set([...pinA.nodes, ...pinB.nodes]));
+    } else {
+      result = pinA.nodes.filter((n) => !setB.has(n));
+    }
+
+    get().setSelection(result, "topology");
+  },
+
+  setPredicateMatchNodes: (nodes: string[]) => {
+    set({ predicateMatchNodes: nodes });
+  },
+
+  clearPredicateMatches: () => {
+    set({ predicateMatchNodes: [] });
+  },
+
+  setPathAnchorNodes: (nodes) => {
+    set({ pathAnchorNodes: nodes });
+  },
+
+  clearPathSelection: () => {
+    set({
+      pathAnchorNodes: [],
+      pathSelection: {
+        isActive: false,
+        paths: [],
+        pathNodes: new Set(),
+        pathEdges: [],
+      },
+    });
+  },
+
+  setPathResults: (result) => {
+    set({ pathSelection: result });
+  },
+
+  enterContrastMode: () => {
+    if (get().selectedNodes.length === 0) return;
+    set({ contrastMode: true, activeSlot: "negative" });
+  },
+
+  exitContrastMode: () => {
+    set({ contrastMode: false, contrastNodes: [], activeSlot: "negative" });
+  },
+
+  setContrastNodes: (nodes) => {
+    set({ contrastNodes: nodes });
+  },
+
+  setActiveSlot: (slot) => {
+    set({ activeSlot: slot });
+  },
+
+  removeSharedFromContrast: () => {
+    const { selectedNodes, contrastNodes } = get();
+    const contrastSet = new Set(contrastNodes);
+    const sharedSet = new Set(selectedNodes.filter((n) => contrastSet.has(n)));
+    if (sharedSet.size === 0) return;
+    const newPositive = selectedNodes.filter((n) => !sharedSet.has(n));
+    const newNegative = contrastNodes.filter((n) => !sharedSet.has(n));
+    set({
+      selectedNodes: newPositive,
+      contrastNodes: newNegative,
+      generatedPredicates: [],
+      generatedPredicateSets: [],
+      selectionMatches: [],
+      activePredicateSetId: null,
+      activePredicateIds: new Set(),
+      predicateMatchNodes: [],
+      nodePredicates: [],
+      nodePredicateSets: [],
+      isGeneratingPredicates: newPositive.length > 0,
+      descriptiveResponse: null,
+      topologyPredicates: [],
+      attributePredicates: [],
+    });
+    if (newPositive.length > 0) {
+      get().generatePredicatesForSelection(newPositive, "topology");
+    }
+  },
 }));
 
-useAnalysisStore.subscribe((_state) => {
-  const saveState = () => {
-    useAnalysisStore.getState().saveSessionState();
-  };
+registerCurrentDatasetGetter(() => useAnalysisStore.getState().currentDataset);
 
-  clearTimeout((globalThis as any)._saveStateTimeout);
-  (globalThis as any)._saveStateTimeout = setTimeout(saveState, 500);
+useAnalysisStore.subscribe((state, prevState) => {
+  if (
+    state.selectedNodes === prevState.selectedNodes &&
+    state.pinnedSelections === prevState.pinnedSelections &&
+    state.favoritedClauses === prevState.favoritedClauses &&
+    state.activeFilterItems === prevState.activeFilterItems
+  ) {
+    return;
+  }
+  const globalWithTimeout = globalThis as typeof globalThis & {
+    _saveStateTimeout?: ReturnType<typeof setTimeout>;
+  };
+  clearTimeout(globalWithTimeout._saveStateTimeout);
+  globalWithTimeout._saveStateTimeout = setTimeout(() => {
+    useAnalysisStore.getState().saveSessionState();
+  }, 500);
 });
+
+export const useSelectedNodes = () => useAnalysisStore((s) => s.selectedNodes);
+export const useContrastNodes = () => useAnalysisStore((s) => s.contrastNodes);
+export const useContrastMode = () => useAnalysisStore((s) => s.contrastMode);
+export const useActiveSlot = () => useAnalysisStore((s) => s.activeSlot);
+export const usePathSelection = () => useAnalysisStore((s) => s.pathSelection);
+export const usePinnedSelections = () => useAnalysisStore((s) => s.pinnedSelections);
+export const useIsGeneratingPredicates = () => useAnalysisStore((s) => s.isGeneratingPredicates);
+export const useTopologyPredicates = () => useAnalysisStore((s) => s.topologyPredicates);
+export const useAttributePredicates = () => useAnalysisStore((s) => s.attributePredicates);
+export const useHighlightedNodes = () => useAnalysisStore((s) => s.highlightedNodes);
+export const useSelectionActions = () =>
+  useAnalysisStore((s) => ({
+    setSelection: s.setSelection,
+    clearSelection: s.clearSelection,
+    setHighlightedNodes: s.setHighlightedNodes,
+    clearHighlights: s.clearHighlights,
+    setPredicateMatchNodes: s.setPredicateMatchNodes,
+    pinSelection: s.pinSelection,
+  }));

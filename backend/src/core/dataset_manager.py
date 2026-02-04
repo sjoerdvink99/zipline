@@ -1,25 +1,31 @@
-"""Dataset manager for loading and managing graph datasets."""
-
 import json
+import os
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import networkx as nx
 
 from utils.logging_config import LogContext, get_logger
 
+
+def _prewarm_caches(graph: nx.Graph) -> None:
+    from fol.learning.literal_generator import _get_learning_neighborhood_index
+    from fol.schema import get_edge_schema
+
+    get_edge_schema(graph)
+    _get_learning_neighborhood_index(graph)
+
+
 logger = get_logger("datasets")
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-
-
-# Sample Dataset Loaders
+DATA_DIR = Path(os.environ.get("ZIPLINE_DATA_DIR", str(PROJECT_ROOT / "data")))
 
 
 def get_bron_threat_intel() -> nx.Graph:
-    """Load BRON threat intelligence dataset."""
-    bron_path = PROJECT_ROOT / "data" / "bron_threat_intel.json"
+    bron_path = DATA_DIR / "bron_threat_intel.json"
 
     if not bron_path.exists():
         raise FileNotFoundError(f"BRON dataset not found at {bron_path}")
@@ -35,17 +41,12 @@ def get_bron_threat_intel() -> nx.Graph:
             if not node_id:
                 continue
 
-            node_attrs = {
-                k: v for k, v in node.items() if k not in ["id", "label", "type"]
-            }
-            node_type = node.get("type")
+            node_attrs = {k: v for k, v in node.items() if k not in ["id"]}
+            node_type = node.get("node_type")
             if not node_type:
                 continue
-            node_label = node.get("label", f"{node_type} {node_id}")
 
-            G.add_node(
-                node_id, node_type=node_type, display_name=node_label, **node_attrs
-            )
+            G.add_node(node_id, **node_attrs)
 
     if "links" in data:
         for edge in data["links"]:
@@ -53,20 +54,16 @@ def get_bron_threat_intel() -> nx.Graph:
             target = edge.get("target")
 
             if source and target and source in G.nodes and target in G.nodes:
-                edge_type = edge.get("label", "relationship")
                 edge_attrs = {
-                    k: v
-                    for k, v in edge.items()
-                    if k not in ["source", "target", "label"]
+                    k: v for k, v in edge.items() if k not in ["source", "target"]
                 }
-                G.add_edge(source, target, edge_type=edge_type, **edge_attrs)
+                G.add_edge(source, target, **edge_attrs)
 
     return G
 
 
 def get_primekg_drug_repurposing() -> nx.Graph:
-    """Load PrimeKG drug repurposing dataset."""
-    primekg_path = PROJECT_ROOT / "data" / "primekg_drug_repurposing.json"
+    primekg_path = DATA_DIR / "primekg_drug_repurposing.json"
 
     if not primekg_path.exists():
         raise FileNotFoundError(
@@ -76,8 +73,59 @@ def get_primekg_drug_repurposing() -> nx.Graph:
     return _load_primekg_dataset(primekg_path)
 
 
+def get_cora_citation_network() -> nx.Graph:
+    path = DATA_DIR / "cora_citation_network.json"
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"CORA dataset not found at {path}. "
+            "Run scripts/fetch_cora.py to generate it."
+        )
+
+    with open(path) as f:
+        data = json.load(f)
+
+    G = nx.Graph()
+
+    if "nodes" in data:
+        for node in data["nodes"]:
+            node_id = node.get("id")
+            if not node_id:
+                continue
+            node_attrs = {k: v for k, v in node.items() if k != "id"}
+            if not node_attrs.get("node_type"):
+                continue
+            G.add_node(node_id, **node_attrs)
+
+    if "links" in data:
+        for edge in data["links"]:
+            source = edge.get("source")
+            target = edge.get("target")
+            if source and target and source in G.nodes and target in G.nodes:
+                edge_attrs = {
+                    k: v for k, v in edge.items() if k not in ["source", "target"]
+                }
+                G.add_edge(source, target, **edge_attrs)
+
+    if "metadata" in data:
+        G.graph["metadata"] = data["metadata"]
+
+    return G
+
+
+def get_tennet_nh_energy() -> nx.Graph:
+    path = DATA_DIR / "tennet_nh_energy.json"
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"TenneT NH Energy dataset not found at {path}. "
+            "Run scripts/fetch_tennet_nh.py to generate it."
+        )
+
+    return _load_energy_grid_dataset(path)
+
+
 def _load_primekg_dataset(file_path: Path) -> nx.Graph:
-    """Load a PrimeKG dataset from JSON file."""
     with open(file_path) as f:
         data = json.load(f)
 
@@ -119,9 +167,78 @@ def _load_primekg_dataset(file_path: Path) -> nx.Graph:
     return G
 
 
-# Dataset Registry
+def _load_energy_grid_dataset(file_path: Path) -> nx.Graph:
+    with open(file_path) as f:
+        data = json.load(f)
+
+    G = nx.Graph()
+
+    if "nodes" in data:
+        for node in data["nodes"]:
+            node_id = node.get("id")
+            if not node_id:
+                continue
+
+            node_attrs = {
+                k: v for k, v in node.items() if k not in ["id", "label", "type"]
+            }
+            node_type = node.get("type", "substation")
+            node_label = node.get("label", node_id)
+
+            G.add_node(
+                node_id, node_type=node_type, display_name=node_label, **node_attrs
+            )
+
+    if "links" in data:
+        for edge in data["links"]:
+            source = edge.get("source")
+            target = edge.get("target")
+
+            if source and target and source in G.nodes and target in G.nodes:
+                edge_type = edge.get("label", "transmission_line")
+                edge_attrs = {
+                    k: v
+                    for k, v in edge.items()
+                    if k not in ["source", "target", "label"]
+                }
+                G.add_edge(source, target, edge_type=edge_type, **edge_attrs)
+
+    if "metadata" in data:
+        G.graph["metadata"] = data["metadata"]
+
+    return G
+
 
 DATASETS = {
+    "cora_citation_network": {
+        "name": "CORA Citation Network (~2.7K nodes)",
+        "description": "Scientific citation network where nodes are papers and edges are citations. Each paper belongs to one of 7 research categories, enabling community detection and cross-disciplinary pattern analysis.",
+        "node_types": [
+            "neural_networks",
+            "genetic_algorithms",
+            "probabilistic_methods",
+            "theory",
+            "case_based",
+            "reinforcement_learning",
+            "rule_learning",
+        ],
+        "loader": get_cora_citation_network,
+        "default_label": "Paper",
+        "representational_spaces": {
+            "topology": "Citation network — papers cluster by research area; hub papers accumulate many citations; cross-area bridges are rare",
+            "attributes": "category: 7 research areas (Neural_Networks, Genetic_Algorithms, Probabilistic_Methods, etc.); word_count: active bag-of-words features per paper",
+            "patterns": "Research community detection, influential paper identification, cross-disciplinary bridge papers, topic-topology alignment",
+        },
+        "source": "LINQS — McCallum et al. (2000)",
+        "use_case": "citation_network_analysis",
+        "research_applications": [
+            "Research community detection via citation topology",
+            "Cross-disciplinary paper identification",
+            "Influential paper and hub detection",
+            "Topic vs. citation pattern alignment",
+            "Predicate learning on homogeneous graphs",
+        ],
+    },
     "bron_threat_intel": {
         "name": "MITRE ATT&CK Enterprise (~1.7K nodes)",
         "description": "Pure MITRE ATT&CK Enterprise framework data with techniques, APT groups, malware, tools, mitigations, and campaigns - balanced schema for rich cross-space analysis",
@@ -178,57 +295,123 @@ DATASETS = {
             "Molecular mechanism of action analysis",
         ],
     },
+    "tennet_nh_energy": {
+        "name": "Noord-Holland Energy Infrastructure (TenneT / Gasunie / RVO)",
+        "description": (
+            "Noord-Holland energy infrastructure graph combining TenneT HV substations connected "
+            "by overhead lines and underground cables, individual wind turbines and solar parks "
+            "connected to their nearest substation, and a Gasunie high-pressure gas pipeline network "
+            "with derived junction nodes. Rich generator attributes (capacity, hub height, rotor "
+            "diameter, manufacturer, commissioning year) support multi-space predicate learning."
+        ),
+        "node_types": ["substation", "wind_turbine", "solar_park", "gas_junction"],
+        "loader": get_tennet_nh_energy,
+        "default_label": "Entity",
+        "representational_spaces": {
+            "topology": (
+                "TenneT HV substations connected via overhead and underground cables; wind turbines "
+                "and solar parks connected to nearest substation via feeds_into; Gasunie pipeline "
+                "junctions connected by gas transport pipelines"
+            ),
+            "attributes": (
+                "wind_turbine: capacity_mw, hub_height_m, rotor_diameter_m, manufacturer, turbine_type, "
+                "commissioned_year, municipality, wind_farm, net_production_gwh. "
+                "substation: voltage_kv, status, year_built, operator. "
+                "gas_junction: operator, latitude, longitude. "
+                "solar_park: capacity_kw, municipality."
+            ),
+            "patterns": (
+                "Wind turbine generation patterns by capacity tier and era, HV substation hub topology, "
+                "gas pipeline network clustering, spatial co-location of renewable generation and "
+                "grid infrastructure, and cross-infrastructure energy flow patterns"
+            ),
+        },
+        "sources": [
+            "Atlas NH Energie — Province of Noord-Holland",
+            "https://geoservices.noord-holland.nl/ags/rest/services/thematische_services/atlasNH_Energie/MapServer",
+        ],
+        "use_case": "regional_energy_infrastructure_analysis",
+        "research_applications": [
+            "Wind turbine capacity and technology characterisation",
+            "Renewable energy spatial clustering and grid connectivity",
+            "HV substation hub identification",
+            "Gas pipeline network resilience analysis",
+            "Energy transition era detection (old vs. modern turbines)",
+            "Cross-carrier infrastructure pattern learning",
+        ],
+    },
 }
 
 
 def get_dataset(name: str) -> nx.Graph:
-    """Get a dataset by name."""
     if name not in DATASETS:
         raise ValueError(f"Unknown dataset: {name}")
-    return DATASETS[name]["loader"]()
+    return cast(Callable[[], nx.Graph], DATASETS[name]["loader"])()
 
 
 def list_datasets() -> dict[str, dict[str, Any]]:
-    """List all available datasets."""
     return {
         name: {k: v for k, v in info.items() if k != "loader"}
         for name, info in DATASETS.items()
     }
 
 
-# Dataset Manager Classes
-
-
 class GraphMeta:
-    """Metadata for a graph dataset."""
-
     def __init__(self, name: str, desc: str):
         self.name = name
         self.desc = desc
 
 
 class DatasetManager:
-    """Manager for loading and handling graph datasets."""
-
-    def __init__(self):
+    def __init__(self) -> None:
         self.current_dataset_name: str | None = None
         self.current_graph: nx.Graph | None = None
         self.current_metadata: dict[str, Any] | None = None
         self._graphs: dict[str, nx.Graph] = {}
         self._meta: dict[str, GraphMeta] = {}
 
+    def set_user_graph(
+        self, source_id: str, graph: nx.Graph, meta: dict[str, Any]
+    ) -> dict[str, Any]:
+        start_time = time.time()
+        self.current_graph = graph
+        self.current_dataset_name = source_id
+        self.current_metadata = meta
+        self._graphs[source_id] = graph
+        self._meta[source_id] = GraphMeta(
+            name=meta.get("name", source_id),
+            desc=meta.get("description", ""),
+        )
+        _prewarm_caches(self.current_graph)
+        load_time = (time.time() - start_time) * 1000
+        logger.info(
+            "User graph loaded",
+            extra={
+                "source_id": source_id,
+                "load_time_ms": round(load_time, 2),
+                "nodes": graph.number_of_nodes(),
+                "edges": graph.number_of_edges(),
+            },
+        )
+        return {
+            "name": source_id,
+            "nodes": graph.number_of_nodes(),
+            "edges": graph.number_of_edges(),
+            "metadata": meta,
+        }
+
     def load_dataset(self, name: str) -> dict[str, Any]:
-        """Load a dataset by name."""
         start_time = time.time()
 
-        logger.info(
-            "📂 Loading dataset",
-            extra={"dataset_name": name, "available_datasets": list(DATASETS.keys())},
-        )
-
         if name not in DATASETS:
+            if self.set_active(name):
+                return self.get_current_dataset() or {
+                    "name": name,
+                    "nodes": 0,
+                    "edges": 0,
+                }
             logger.error(
-                "❌ Dataset not found",
+                "Dataset not found",
                 extra={
                     "requested_dataset": name,
                     "available_datasets": list(DATASETS.keys()),
@@ -236,25 +419,32 @@ class DatasetManager:
             )
             raise ValueError(f"Unknown dataset: {name}")
 
+        logger.info(
+            "Loading dataset",
+            extra={"dataset_name": name, "available_datasets": list(DATASETS.keys())},
+        )
+
         try:
             with LogContext(logger, dataset_name=name):
-                logger.debug("🔄 Executing dataset loader...")
+                logger.debug("Executing dataset loader")
                 self.current_graph = get_dataset(name)
                 self.current_dataset_name = name
                 self.current_metadata = DATASETS[name].copy()
                 self.current_metadata.pop("loader", None)
 
+                _prewarm_caches(self.current_graph)
+
                 load_time = (time.time() - start_time) * 1000
 
                 logger.info(
-                    "✅ Dataset loaded successfully",
+                    "Dataset loaded",
                     extra={
                         "load_time_ms": round(load_time, 2),
                         "nodes": self.current_graph.number_of_nodes(),
                         "edges": self.current_graph.number_of_edges(),
                         "node_types": len(
                             {
-                                data.get("type", "unknown")
+                                data.get("node_type", "unknown")
                                 for _, data in self.current_graph.nodes(data=True)
                             }
                         ),
@@ -267,7 +457,7 @@ class DatasetManager:
         except Exception as e:
             load_time = (time.time() - start_time) * 1000
             logger.error(
-                "❌ Dataset loading failed",
+                "Dataset loading failed",
                 extra={
                     "load_time_ms": round(load_time, 2),
                     "error": str(e),
@@ -278,7 +468,8 @@ class DatasetManager:
 
         self._graphs[name] = self.current_graph
         self._meta[name] = GraphMeta(
-            name=DATASETS[name]["name"], desc=DATASETS[name]["description"]
+            name=cast(str, DATASETS[name]["name"]),
+            desc=cast(str, DATASETS[name]["description"]),
         )
 
         return {
@@ -289,7 +480,6 @@ class DatasetManager:
         }
 
     def get_current_dataset(self) -> dict[str, Any] | None:
-        """Get information about the current dataset."""
         if not self.current_graph:
             return None
 
@@ -301,44 +491,35 @@ class DatasetManager:
         }
 
     def get_graph(self) -> nx.Graph | None:
-        """Get the current graph."""
         return self.current_graph
 
     def get_available_datasets(self) -> dict[str, dict[str, Any]]:
-        """Get all available datasets."""
         return list_datasets()
 
     def has_dataset(self) -> bool:
-        """Check if a dataset is currently loaded."""
         return self.current_graph is not None
 
     @property
     def active(self) -> nx.Graph | None:
-        """Get the active graph."""
         return self.current_graph
 
     @property
     def active_graph(self) -> str | None:
-        """Get the active graph name."""
         return self.current_dataset_name
 
     @property
     def graphs(self) -> dict[str, nx.Graph]:
-        """Get all loaded graphs."""
         return self._graphs
 
     @property
     def meta(self) -> dict[str, GraphMeta]:
-        """Get metadata for all loaded graphs."""
         return self._meta
 
     def set(self, name: str, graph: nx.Graph, description: str = "") -> None:
-        """Set a custom graph."""
         self._graphs[name] = graph
         self._meta[name] = GraphMeta(name=name, desc=description)
 
     def set_active(self, name: str) -> bool:
-        """Set an already loaded graph as active."""
         if name in self._graphs:
             self.current_graph = self._graphs[name]
             self.current_dataset_name = name

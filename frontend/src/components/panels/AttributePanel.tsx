@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { isAbortedRequest } from "../../api";
 import { getDistributions } from "../../api/attributes";
 import type {
@@ -9,19 +9,22 @@ import type {
   TemporalDistribution,
   DistributionsByLabelResponse,
   LabelDistributions,
+  DistributionBin,
+  TemporalBin,
+  DistributionValue,
 } from "../../api/attributes";
 import { useAnalysisStore } from "../../store/analysisStore";
 import type { GeneratedPredicate } from "../../api/predicates";
-import { getLabelColor } from "../../config/labelColors";
 import { getNodeType, NODE_TYPE_COLORS } from "../../config/pixiColors";
-import { UmapVisualization } from "../panels/UmapVisualization";
+import { PanelHeader } from "../ui/PanelHeader";
+import { AttributeIcon } from "../ui/Icons";
 
 const pixiColorToHex = (color: number): string => {
-  return `#${color.toString(16).padStart(6, '0')}`;
+  return `#${color.toString(16).padStart(6, "0")}`;
 };
 
 const getTopologyColor = (label: string): string => {
-  const nodeType = getNodeType(label);
+  const nodeType = getNodeType(label, { node_type: label });
   const color = NODE_TYPE_COLORS[nodeType];
   return pixiColorToHex(color);
 };
@@ -37,7 +40,7 @@ const estimateMean = (dist: NumericDistribution): number => {
   return totalCount > 0 ? totalSum / totalCount : 0;
 };
 
-const Histogram = ({
+const Histogram = memo(function Histogram({
   dist,
   attributeName,
   labelScope,
@@ -51,8 +54,12 @@ const Histogram = ({
   selectedNodes: string[];
   onSelectBin: (nodeIds: string[]) => void;
   onCreatePredicate: (predicate: GeneratedPredicate) => void;
-}) => {
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; bin: typeof dist.bins[0] } | null>(null);
+}) {
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    bin: DistributionBin;
+  } | null>(null);
   const maxCount = Math.max(...dist.bins.map((b) => b.count), 1);
   const selectedSet = useMemo(() => new Set(selectedNodes), [selectedNodes]);
   const hasSelection = selectedNodes.length > 0;
@@ -70,28 +77,8 @@ const Histogram = ({
     return val.toFixed(2);
   }, []);
 
-  const formatTemporalLabel = useCallback((dateStr: string, binType: string) => {
-    try {
-      const date = new Date(dateStr);
-      switch (binType) {
-        case 'hours':
-          return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        case 'days':
-          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        case 'months':
-          return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
-        case 'years':
-          return date.getFullYear().toString();
-        default:
-          return date.toLocaleDateString('en-US');
-      }
-    } catch {
-      return dateStr;
-    }
-  }, []);
-
   const handleBarClick = useCallback(
-    (e: React.MouseEvent, bin: (typeof dist.bins)[0]) => {
+    (e: React.MouseEvent, bin: DistributionBin) => {
       if (e.shiftKey) {
         const predicate: GeneratedPredicate = {
           id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
@@ -112,11 +99,11 @@ const Histogram = ({
         onSelectBin(bin.node_ids);
       }
     },
-    [onSelectBin, onCreatePredicate, attributeName, labelScope]
+    [onSelectBin, onCreatePredicate, attributeName, labelScope],
   );
 
   const handleContextMenu = useCallback(
-    (e: React.MouseEvent, bin: typeof dist.bins[0]) => {
+    (e: React.MouseEvent, bin: DistributionBin) => {
       e.preventDefault();
       const menuWidth = 140;
       const menuHeight = 60;
@@ -124,7 +111,7 @@ const Histogram = ({
       const y = Math.min(e.clientY, window.innerHeight - menuHeight - 10);
       setContextMenu({ x, y, bin });
     },
-    []
+    [],
   );
 
   const handleCreatePredicate = useCallback(() => {
@@ -156,32 +143,32 @@ const Histogram = ({
   }, [contextMenu]);
 
   return (
-    <div className="mt-2">
-      <div className="relative h-10 flex items-end gap-px bg-gray-50/50 rounded p-1">
+    <div className="mt-1.5">
+      <div className="relative h-8 flex items-end gap-[1px] rounded-md overflow-hidden bg-gray-50 p-0.5">
         {dist.bins.map((bin, i) => {
-          const totalHeight = (bin.count / maxCount) * 90; // Leave some padding
+          const totalHeight = (bin.count / maxCount) * 100;
           const selectedInBin = bin.node_ids.filter((id) =>
-            selectedSet.has(id)
+            selectedSet.has(id),
           ).length;
           const selectedHeight = hasSelection
-            ? (selectedInBin / maxCount) * 90
+            ? (selectedInBin / maxCount) * 100
             : 0;
 
           return (
             <button
               key={i}
-              className="flex-1 min-w-0 h-full relative group transition-all duration-150 hover:scale-105"
+              className="flex-1 min-w-0 h-full relative group"
               onClick={(e) => handleBarClick(e, bin)}
               onContextMenu={(e) => handleContextMenu(e, bin)}
               title={`${formatLabel(bin.min)}${bin.min !== bin.max ? ` – ${formatLabel(bin.max)}` : ""}: ${bin.count} nodes (shift-click to add filter)`}
             >
               <div
-                className="absolute bottom-0 left-0 right-0 rounded-sm bg-gray-300/80 group-hover:bg-gray-400 transition-all duration-150"
-                style={{ height: `${Math.max(totalHeight, 6)}%` }}
+                className="absolute bottom-0 left-0 right-0 bg-gray-200 group-hover:bg-gray-300 transition-colors rounded-[2px]"
+                style={{ height: `${Math.max(totalHeight, 4)}%` }}
               />
               {hasSelection && selectedInBin > 0 && (
                 <div
-                  className="absolute bottom-0 left-0 right-0 rounded-sm bg-slate-400 shadow-sm"
+                  className="absolute bottom-0 left-0 right-0 bg-emerald-400 rounded-[2px]"
                   style={{ height: `${Math.max(selectedHeight, 4)}%` }}
                 />
               )}
@@ -190,43 +177,65 @@ const Histogram = ({
         })}
         {dist.max !== dist.min && (
           <div
-            className="absolute bottom-1 w-0.5 h-[calc(100%-8px)] bg-slate-500 pointer-events-none z-10 rounded-full shadow-sm"
-            style={{ left: `calc(${meanPosition}% + 4px)` }}
+            className="absolute bottom-0.5 w-0.5 h-[calc(100%-4px)] bg-gray-500/70 pointer-events-none z-10 rounded-full"
+            style={{ left: `calc(${meanPosition}% + 2px)` }}
             title={`Mean: ${formatLabel(mean)}`}
           />
         )}
       </div>
-      <div className="flex justify-between text-[9px] text-gray-500 mt-2 px-1">
+      <div className="flex justify-between text-[9px] text-gray-400 mt-1 px-0.5">
         <span className="font-mono">{formatLabel(dist.min)}</span>
-        <span className="text-slate-600 font-medium">μ={formatLabel(mean)}</span>
+        <span className="text-gray-500 font-medium">μ={formatLabel(mean)}</span>
         <span className="font-mono">{formatLabel(dist.max)}</span>
       </div>
 
       {contextMenu && (
-        <div
-          className="fixed bg-white rounded-md shadow-lg border border-gray-200 py-1.5 z-50 min-w-[130px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => { onSelectBin(contextMenu.bin.node_ids); setContextMenu(null); }}
-            className="w-full px-3 py-2 text-left text-[11px] text-gray-700 hover:bg-gray-50 hover:text-gray-800 transition-colors duration-150 font-medium"
-          >
-            Select nodes
-          </button>
-          <button
-            onClick={handleCreatePredicate}
-            className="w-full px-3 py-2 text-left text-[11px] text-gray-700 hover:bg-gray-50 hover:text-gray-800 transition-colors duration-150 font-medium"
-          >
-            Add as filter
-          </button>
-        </div>
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onSelect={() => {
+            onSelectBin(contextMenu.bin.node_ids);
+            setContextMenu(null);
+          }}
+          onFilter={handleCreatePredicate}
+        />
       )}
     </div>
   );
-};
+});
 
-const TemporalHistogram = ({
+const ContextMenu = ({
+  x,
+  y,
+  onSelect,
+  onFilter,
+}: {
+  x: number;
+  y: number;
+  onSelect: () => void;
+  onFilter: () => void;
+}) => (
+  <div
+    className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]"
+    style={{ left: x, top: y }}
+    onClick={(e) => e.stopPropagation()}
+  >
+    <button
+      onClick={onSelect}
+      className="w-full px-3 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+    >
+      Select nodes
+    </button>
+    <button
+      onClick={onFilter}
+      className="w-full px-3 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+    >
+      Add as filter
+    </button>
+  </div>
+);
+
+const TemporalHistogram = memo(function TemporalHistogram({
   dist,
   attributeName,
   labelScope,
@@ -240,34 +249,50 @@ const TemporalHistogram = ({
   selectedNodes: string[];
   onSelectBin: (nodeIds: string[]) => void;
   onCreatePredicate: (predicate: GeneratedPredicate) => void;
-}) => {
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; bin: typeof dist.bins[0] } | null>(null);
+}) {
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    bin: TemporalBin;
+  } | null>(null);
   const maxCount = Math.max(...dist.bins.map((b) => b.count), 1);
   const selectedSet = useMemo(() => new Set(selectedNodes), [selectedNodes]);
   const hasSelection = selectedNodes.length > 0;
 
-  const formatTemporalLabel = useCallback((dateStr: string, binType: string) => {
-    try {
-      const date = new Date(dateStr);
-      switch (binType) {
-        case 'hours':
-          return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        case 'days':
-          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        case 'months':
-          return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
-        case 'years':
-          return date.getFullYear().toString();
-        default:
-          return date.toLocaleDateString('en-US');
+  const formatTemporalLabel = useCallback(
+    (dateStr: string, binType: string) => {
+      try {
+        const date = new Date(dateStr);
+        switch (binType) {
+          case "hours":
+            return date.toLocaleTimeString("en-US", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          case "days":
+            return date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            });
+          case "months":
+            return date.toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+            });
+          case "years":
+            return date.getFullYear().toString();
+          default:
+            return date.toLocaleDateString("en-US");
+        }
+      } catch {
+        return dateStr;
       }
-    } catch {
-      return dateStr;
-    }
-  }, []);
+    },
+    [],
+  );
 
   const handleBarClick = useCallback(
-    (e: React.MouseEvent, bin: typeof dist.bins[0]) => {
+    (e: React.MouseEvent, bin: TemporalBin) => {
       if (e.shiftKey) {
         const predicate: GeneratedPredicate = {
           id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
@@ -288,11 +313,11 @@ const TemporalHistogram = ({
         onSelectBin(bin.node_ids);
       }
     },
-    [onSelectBin, onCreatePredicate, attributeName, labelScope]
+    [onSelectBin, onCreatePredicate, attributeName, labelScope],
   );
 
   const handleContextMenu = useCallback(
-    (e: React.MouseEvent, bin: typeof dist.bins[0]) => {
+    (e: React.MouseEvent, bin: TemporalBin) => {
       e.preventDefault();
       const menuWidth = 140;
       const menuHeight = 60;
@@ -300,7 +325,7 @@ const TemporalHistogram = ({
       const y = Math.min(e.clientY, window.innerHeight - menuHeight - 10);
       setContextMenu({ x, y, bin });
     },
-    []
+    [],
   );
 
   const handleCreatePredicate = useCallback(() => {
@@ -332,38 +357,39 @@ const TemporalHistogram = ({
   }, [contextMenu]);
 
   return (
-    <div className="mt-2">
-      <div className="relative h-10 flex items-end gap-px bg-gray-50/50 rounded p-1">
+    <div className="mt-1.5">
+      <div className="relative h-8 flex items-end gap-[1px] rounded-md overflow-hidden bg-gray-50 p-0.5">
         {dist.bins.map((bin, i) => {
-          const totalHeight = (bin.count / maxCount) * 90;
+          const totalHeight = (bin.count / maxCount) * 100;
           const selectedInBin = bin.node_ids.filter((id) =>
-            selectedSet.has(id)
+            selectedSet.has(id),
           ).length;
           const selectedHeight = hasSelection
-            ? (selectedInBin / maxCount) * 90
+            ? (selectedInBin / maxCount) * 100
             : 0;
 
           const startDate = formatTemporalLabel(bin.min_date, dist.bin_type);
           const endDate = formatTemporalLabel(bin.max_date, dist.bin_type);
-          const tooltip = startDate === endDate ?
-            `${startDate}: ${bin.count} nodes` :
-            `${startDate} – ${endDate}: ${bin.count} nodes`;
+          const tooltip =
+            startDate === endDate
+              ? `${startDate}: ${bin.count} nodes`
+              : `${startDate} – ${endDate}: ${bin.count} nodes`;
 
           return (
             <button
               key={i}
-              className="flex-1 min-w-0 h-full relative group transition-all duration-150 hover:scale-105"
+              className="flex-1 min-w-0 h-full relative group"
               onClick={(e) => handleBarClick(e, bin)}
               onContextMenu={(e) => handleContextMenu(e, bin)}
               title={`${tooltip} (shift-click to add filter)`}
             >
               <div
-                className="absolute bottom-0 left-0 right-0 rounded-sm bg-gray-300/80 group-hover:bg-gray-400 transition-all duration-150"
-                style={{ height: `${Math.max(totalHeight, 6)}%` }}
+                className="absolute bottom-0 left-0 right-0 bg-gray-200 group-hover:bg-gray-300 transition-colors rounded-[2px]"
+                style={{ height: `${Math.max(totalHeight, 4)}%` }}
               />
               {hasSelection && selectedInBin > 0 && (
                 <div
-                  className="absolute bottom-0 left-0 right-0 rounded-sm bg-slate-400 shadow-sm"
+                  className="absolute bottom-0 left-0 right-0 bg-emerald-400 rounded-[2px]"
                   style={{ height: `${Math.max(selectedHeight, 4)}%` }}
                 />
               )}
@@ -371,11 +397,11 @@ const TemporalHistogram = ({
           );
         })}
       </div>
-      <div className="flex justify-between text-[9px] text-gray-500 mt-2 px-1">
+      <div className="flex justify-between text-[9px] text-gray-400 mt-1 px-0.5">
         <span className="font-mono">
           {formatTemporalLabel(dist.min_date, dist.bin_type)}
         </span>
-        <span className="text-slate-600 font-medium capitalize">
+        <span className="text-gray-500 font-medium capitalize">
           {dist.bin_type}
         </span>
         <span className="font-mono">
@@ -384,30 +410,21 @@ const TemporalHistogram = ({
       </div>
 
       {contextMenu && (
-        <div
-          className="fixed bg-white rounded-md shadow-lg border border-gray-200 py-1.5 z-50 min-w-[130px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => { onSelectBin(contextMenu.bin.node_ids); setContextMenu(null); }}
-            className="w-full px-3 py-2 text-left text-[11px] text-gray-700 hover:bg-gray-50 hover:text-gray-800 transition-colors duration-150 font-medium"
-          >
-            Select nodes
-          </button>
-          <button
-            onClick={handleCreatePredicate}
-            className="w-full px-3 py-2 text-left text-[11px] text-gray-700 hover:bg-gray-50 hover:text-gray-800 transition-colors duration-150 font-medium"
-          >
-            Add as filter
-          </button>
-        </div>
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onSelect={() => {
+            onSelectBin(contextMenu.bin.node_ids);
+            setContextMenu(null);
+          }}
+          onFilter={handleCreatePredicate}
+        />
       )}
     </div>
   );
-};
+});
 
-const BarChart = ({
+const BarChart = memo(function BarChart({
   dist,
   attributeName,
   labelScope,
@@ -421,16 +438,20 @@ const BarChart = ({
   selectedNodes: string[];
   onSelectValue: (nodeIds: string[]) => void;
   onCreatePredicate: (predicate: GeneratedPredicate) => void;
-}) => {
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; value: typeof dist.values[0] } | null>(null);
+}) {
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    value: DistributionValue;
+  } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAll, setShowAll] = useState(false);
   const maxCount = Math.max(...dist.values.map((v) => v.count), 1);
-  const selectedSet = new Set(selectedNodes);
+  const selectedSet = useMemo(() => new Set(selectedNodes), [selectedNodes]);
   const hasSelection = selectedNodes.length > 0;
 
   const handleBarClick = useCallback(
-    (e: React.MouseEvent, value: (typeof dist.values)[0]) => {
+    (e: React.MouseEvent, value: DistributionValue) => {
       if (e.shiftKey) {
         const isBool = dist.type === "boolean";
         const predicate: GeneratedPredicate = {
@@ -451,11 +472,11 @@ const BarChart = ({
         onSelectValue(value.node_ids);
       }
     },
-    [onSelectValue, onCreatePredicate, attributeName, dist.type, labelScope]
+    [onSelectValue, onCreatePredicate, attributeName, dist.type, labelScope],
   );
 
   const handleContextMenu = useCallback(
-    (e: React.MouseEvent, value: typeof dist.values[0]) => {
+    (e: React.MouseEvent, value: DistributionValue) => {
       e.preventDefault();
       const menuWidth = 140;
       const menuHeight = 60;
@@ -463,7 +484,7 @@ const BarChart = ({
       const y = Math.min(e.clientY, window.innerHeight - menuHeight - 10);
       setContextMenu({ x, y, value });
     },
-    []
+    [],
   );
 
   const handleCreatePredicate = useCallback(() => {
@@ -495,36 +516,47 @@ const BarChart = ({
   }, [contextMenu]);
 
   const filteredValues = useMemo(() => {
-    const filtered = dist.values.filter(value =>
-      value.label.toLowerCase().includes(searchTerm.toLowerCase())
+    const filtered = dist.values.filter((value) =>
+      value.label.toLowerCase().includes(searchTerm.toLowerCase()),
     );
+
+    if (hasSelection) {
+      filtered.sort((a, b) => {
+        const aSelected = a.node_ids.filter((id) => selectedSet.has(id)).length;
+        const bSelected = b.node_ids.filter((id) => selectedSet.has(id)).length;
+        return bSelected - aSelected || b.count - a.count;
+      });
+    } else {
+      filtered.sort((a, b) => b.count - a.count);
+    }
 
     const limit = showAll ? filtered.length : Math.min(filtered.length, 8);
     return filtered.slice(0, limit);
-  }, [dist.values, searchTerm, showAll]);
+  }, [dist.values, searchTerm, showAll, hasSelection, selectedSet]);
 
   const hasSearch = dist.values.length > 20;
-  const hiddenCount = dist.values.filter(value =>
-    value.label.toLowerCase().includes(searchTerm.toLowerCase())
-  ).length - filteredValues.length;
+  const hiddenCount =
+    dist.values.filter((value) =>
+      value.label.toLowerCase().includes(searchTerm.toLowerCase()),
+    ).length - filteredValues.length;
 
   return (
-    <div className="space-y-1.5 relative mt-2">
+    <div className="space-y-1 relative mt-1.5">
       {hasSearch && (
-        <div className="mb-2">
+        <div className="mb-1.5">
           <input
             type="text"
             placeholder="Search values..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full text-[10px] px-2 py-1.5 border border-gray-200 rounded-sm focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white"
+            className="w-full text-[10px] px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-300 bg-white placeholder:text-gray-400"
           />
         </div>
       )}
       {filteredValues.map((value) => {
         const width = (value.count / maxCount) * 100;
         const selectedInValue = value.node_ids.filter((id) =>
-          selectedSet.has(id)
+          selectedSet.has(id),
         ).length;
         const selectedWidth = hasSelection
           ? (selectedInValue / maxCount) * 100
@@ -533,32 +565,34 @@ const BarChart = ({
         return (
           <button
             key={value.label}
-            className="w-full group hover:bg-gray-50/50 rounded-sm p-1 transition-colors duration-150"
+            className="w-full group hover:bg-gray-50 rounded p-0.5 transition-colors"
             onClick={(e) => handleBarClick(e, value)}
             onContextMenu={(e) => handleContextMenu(e, value)}
             title={`${value.label}: ${value.count} nodes (shift-click to add filter)`}
           >
-            <div className="flex items-center gap-2.5">
-              <span className={`text-[9px] w-16 truncate text-left font-medium ${
-                value.label.startsWith('[') && value.label.endsWith(']')
-                  ? 'text-gray-400 italic'
-                  : 'text-gray-600'
-              }`}>
+            <div className="flex items-center gap-2">
+              <span
+                className={`text-[9px] w-14 truncate text-left ${
+                  value.label.startsWith("[") && value.label.endsWith("]")
+                    ? "text-gray-400 italic"
+                    : "text-gray-600"
+                }`}
+              >
                 {value.label}
               </span>
-              <div className="flex-1 h-3.5 bg-gray-100 rounded-sm relative overflow-hidden shadow-inner">
+              <div className="flex-1 h-3 bg-gray-50 rounded relative overflow-hidden">
                 <div
-                  className="absolute left-0 top-0 h-full bg-gray-300 group-hover:bg-gray-400 transition-all duration-150 rounded-sm"
+                  className="absolute left-0 top-0 h-full bg-gray-200 group-hover:bg-gray-300 transition-colors rounded"
                   style={{ width: `${Math.max(width, 2)}%` }}
                 />
                 {hasSelection && selectedInValue > 0 && (
                   <div
-                    className="absolute left-0 top-0 h-full bg-slate-400 rounded-sm shadow-sm"
+                    className="absolute left-0 top-0 h-full bg-emerald-400 rounded"
                     style={{ width: `${Math.max(selectedWidth, 1)}%` }}
                   />
                 )}
               </div>
-              <span className="text-[9px] text-gray-500 w-7 text-right font-mono">
+              <span className="text-[9px] text-gray-400 w-6 text-right font-mono">
                 {value.count}
               </span>
             </div>
@@ -566,70 +600,72 @@ const BarChart = ({
         );
       })}
       {hiddenCount > 0 && (
-        <div className="flex items-center justify-center gap-2 text-[9px] text-gray-400 mt-2 py-1 border-t border-gray-100">
-          <span>+{hiddenCount} more values</span>
+        <div className="flex items-center justify-center gap-2 text-[9px] text-gray-400 mt-1.5 pt-1.5 border-t border-gray-100">
+          <span>+{hiddenCount} more</span>
           <button
             onClick={() => setShowAll(!showAll)}
             className="text-gray-500 hover:text-gray-700 underline"
           >
-            {showAll ? "show less" : "show all"}
+            {showAll ? "less" : "all"}
           </button>
         </div>
       )}
 
       {contextMenu && (
-        <div
-          className="fixed bg-white rounded-md shadow-lg border border-gray-200 py-1.5 z-50 min-w-[130px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => { onSelectValue(contextMenu.value.node_ids); setContextMenu(null); }}
-            className="w-full px-3 py-2 text-left text-[11px] text-gray-700 hover:bg-gray-50 hover:text-gray-800 transition-colors duration-150 font-medium"
-          >
-            Select nodes
-          </button>
-          <button
-            onClick={handleCreatePredicate}
-            className="w-full px-3 py-2 text-left text-[11px] text-gray-700 hover:bg-gray-50 hover:text-gray-800 transition-colors duration-150 font-medium"
-          >
-            Add as filter
-          </button>
-        </div>
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onSelect={() => {
+            onSelectValue(contextMenu.value.node_ids);
+            setContextMenu(null);
+          }}
+          onFilter={handleCreatePredicate}
+        />
       )}
     </div>
   );
-};
+});
 
 const getSelectionSummary = (
   distribution: AttributeDistribution,
-  selectedNodes: string[]
+  selectedNodes: string[],
 ): string | null => {
   if (selectedNodes.length === 0) return null;
 
   const selectedSet = new Set(selectedNodes);
 
   if (distribution.type === "temporal") {
-    const selectedBins = distribution.bins.filter(bin =>
-      bin.node_ids.some(id => selectedSet.has(id))
+    const selectedBins = distribution.bins.filter((bin) =>
+      bin.node_ids.some((id) => selectedSet.has(id)),
     );
 
     if (selectedBins.length === 0) return null;
     if (selectedBins.length === 1) {
       try {
         const date = new Date(selectedBins[0].min_date);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
       } catch {
         return selectedBins[0].label;
       }
     }
 
-    const minDate = new Date(Math.min(...selectedBins.map(bin => new Date(bin.min_date).getTime())));
-    const maxDate = new Date(Math.max(...selectedBins.map(bin => new Date(bin.max_date).getTime())));
+    const minDate = new Date(
+      Math.min(...selectedBins.map((bin) => new Date(bin.min_date).getTime())),
+    );
+    const maxDate = new Date(
+      Math.max(...selectedBins.map((bin) => new Date(bin.max_date).getTime())),
+    );
 
     const formatDate = (date: Date) => {
       try {
-        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        return date.toLocaleDateString("en-US", {
+          month: "short",
+          year: "numeric",
+        });
       } catch {
         return date.toString();
       }
@@ -639,7 +675,9 @@ const getSelectionSummary = (
   } else if (distribution.type === "numeric") {
     const selectedValues: number[] = [];
     for (const bin of distribution.bins) {
-      const matchCount = bin.node_ids.filter((id) => selectedSet.has(id)).length;
+      const matchCount = bin.node_ids.filter((id) =>
+        selectedSet.has(id),
+      ).length;
       if (matchCount > 0) {
         const midpoint = (bin.min + bin.max) / 2;
         for (let i = 0; i < matchCount; i++) {
@@ -669,7 +707,9 @@ const getSelectionSummary = (
   } else {
     const valueCounts: Record<string, number> = {};
     for (const val of distribution.values) {
-      const matchCount = val.node_ids.filter((id) => selectedSet.has(id)).length;
+      const matchCount = val.node_ids.filter((id) =>
+        selectedSet.has(id),
+      ).length;
       if (matchCount > 0) {
         valueCounts[val.label] = matchCount;
       }
@@ -688,7 +728,7 @@ const getSelectionSummary = (
   }
 };
 
-const AttributeRow = ({
+const AttributeRow = memo(function AttributeRow({
   attributeName,
   distribution,
   labelScope,
@@ -702,30 +742,28 @@ const AttributeRow = ({
   selectedNodes: string[];
   onSelectNodes: (nodeIds: string[]) => void;
   onCreatePredicate: (predicate: GeneratedPredicate) => void;
-}) => {
+}) {
   const selectionSummary = useMemo(
     () => getSelectionSummary(distribution, selectedNodes),
-    [distribution, selectedNodes]
+    [distribution, selectedNodes],
   );
 
   return (
-    <div className="px-3 py-1 relative">
-      <div className="w-full flex items-center justify-between py-1">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] font-semibold text-gray-700 truncate">
-            {attributeName}
-          </span>
-        </div>
+    <div className="px-2 py-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-medium text-gray-600 truncate">
+          {attributeName}
+        </span>
         {selectionSummary && (
           <span
-            className="text-[9px] text-slate-700 font-semibold ml-2 truncate max-w-[45%] bg-slate-100 px-1.5 py-0.5 rounded"
+            className="text-[8px] text-emerald-700 font-medium ml-2 truncate max-w-[40%] bg-emerald-50 px-1.5 py-0.5 rounded"
             title={selectionSummary}
           >
             {selectionSummary}
           </span>
         )}
       </div>
-      <div className="pb-2">
+      <div className="pb-1">
         {distribution.type === "numeric" ? (
           <Histogram
             dist={distribution}
@@ -757,9 +795,9 @@ const AttributeRow = ({
       </div>
     </div>
   );
-};
+});
 
-const LabelSection = ({
+const LabelSection = memo(function LabelSection({
   label,
   labelData,
   selectedNodes,
@@ -771,52 +809,56 @@ const LabelSection = ({
   selectedNodes: string[];
   onSelectNodes: (nodeIds: string[]) => void;
   onCreatePredicate: (predicate: GeneratedPredicate) => void;
-}) => {
-  const colors = getLabelColor(label);
-
+}) {
   const selectedSet = useMemo(() => new Set(selectedNodes), [selectedNodes]);
   const selectedInLabel = useMemo(() => {
     return labelData.node_ids.filter((id) => selectedSet.has(id)).length;
   }, [labelData.node_ids, selectedSet]);
 
   const sortedAttrs = useMemo(() => {
-    return Object.entries(labelData.attributes).sort(([a], [b]) => a.localeCompare(b));
+    return Object.entries(labelData.attributes).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
   }, [labelData.attributes]);
 
   const hasAttributes = sortedAttrs.length > 0;
-
   const topologyColor = getTopologyColor(label);
 
   return (
-    <div className="overflow-hidden">
-      <div className={`w-full flex items-center justify-between px-3 py-3 ${selectedInLabel > 0 ? colors.bg : 'bg-transparent'} rounded-lg`}>
-        <div className="flex items-center gap-2.5 min-w-0">
+    <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
+      <div
+        className={`flex items-center justify-between px-3 py-2.5 ${
+          selectedInLabel > 0
+            ? "bg-emerald-50 border-b border-emerald-100"
+            : "bg-gray-50/50 border-b border-gray-100"
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
           <div
-            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+            className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-2 ring-white"
             style={{ backgroundColor: topologyColor }}
           />
-          <span className={`text-[11px] font-bold ${selectedInLabel > 0 ? colors.text : 'text-gray-700'} truncate`}>
+          <span className="text-[11px] font-semibold text-gray-800 truncate">
             {label}
           </span>
-          <span className="text-[9px] text-gray-500 font-medium bg-gray-100 px-1.5 py-0.5 rounded">
-            {labelData.label_count} nodes
+          <span className="text-[9px] text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-100">
+            {labelData.label_count}
           </span>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           {selectedInLabel > 0 && (
-            <span className="text-[9px] font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
+            <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
               {selectedInLabel} selected
             </span>
           )}
           {!hasAttributes && (
-            <span className="text-[9px] text-gray-400 italic font-medium">
-              no unique attrs
-            </span>
+            <span className="text-[9px] text-gray-400 italic">no attrs</span>
           )}
         </div>
       </div>
+
       {hasAttributes && (
-        <div className="mt-2">
+        <div className="py-1.5 divide-y divide-gray-50">
           {sortedAttrs.map(([attrName, dist]) => (
             <AttributeRow
               key={attrName}
@@ -832,9 +874,9 @@ const LabelSection = ({
       )}
     </div>
   );
-};
+});
 
-const SharedAttributesSection = ({
+const SharedAttributesSection = memo(function SharedAttributesSection({
   sharedAttributes,
   selectedNodes,
   onSelectNodes,
@@ -844,28 +886,34 @@ const SharedAttributesSection = ({
   selectedNodes: string[];
   onSelectNodes: (nodeIds: string[]) => void;
   onCreatePredicate: (predicate: GeneratedPredicate) => void;
-}) => {
+}) {
   const sortedAttrs = useMemo(() => {
-    return Object.entries(sharedAttributes).sort(([a], [b]) => a.localeCompare(b));
+    return Object.entries(sharedAttributes).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
   }, [sharedAttributes]);
 
   if (sortedAttrs.length === 0) return null;
 
   return (
-    <div className="overflow-hidden">
-      <div className="w-full flex items-center justify-between px-3 py-3 bg-gray-50 rounded-lg">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-[11px] font-bold text-gray-700">
+    <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50/80 border-b border-gray-100">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-gray-400 ring-2 ring-white" />
+          <span className="text-[11px] font-semibold text-gray-800">
             Shared Attributes
           </span>
-          <span className="text-[9px] text-gray-500 font-medium bg-gray-100 px-1.5 py-0.5 rounded">
-            {sortedAttrs.length} attrs across labels
+          <span className="text-[9px] text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-100">
+            {sortedAttrs.length}
           </span>
         </div>
       </div>
-      <div className="mt-2">
+
+      <div className="py-1.5 divide-y divide-gray-50">
         {sortedAttrs.map(([attrName, dist]) => {
-          const labels = (dist as AttributeDistribution & { labels?: string[] }).labels || [];
+          const labels =
+            (dist as AttributeDistribution & { labels?: string[] }).labels ||
+            [];
           return (
             <div key={attrName}>
               <AttributeRow
@@ -877,15 +925,19 @@ const SharedAttributesSection = ({
                 onCreatePredicate={onCreatePredicate}
               />
               {labels.length > 0 && (
-                <div className="ml-3 -mt-1 mb-2">
+                <div className="px-2 pb-2 -mt-1">
                   <div className="flex flex-wrap gap-1">
                     {labels.map((lbl) => {
-                      const lblColors = getLabelColor(lbl);
+                      const topologyColor = getTopologyColor(lbl);
                       return (
                         <span
                           key={lbl}
-                          className={`text-[8px] px-1.5 py-0.5 rounded ${lblColors.bg} ${lblColors.text}`}
+                          className="text-[8px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 flex items-center gap-1"
                         >
+                          <span
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: topologyColor }}
+                          />
                           {lbl}
                         </span>
                       );
@@ -899,19 +951,25 @@ const SharedAttributesSection = ({
       </div>
     </div>
   );
-};
+});
 
-type TabType = "attributes" | "umap";
-
-export const AttributePanel = () => {
+export const AttributePanel = ({
+  showHeader = true,
+}: {
+  showHeader?: boolean;
+}) => {
   const {
     selectedNodes,
+    predicateMatchNodes,
     setSelection,
     savePredicateDirect,
   } = useAnalysisStore();
 
-  const [activeTab, setActiveTab] = useState<TabType>("attributes");
-  const [distributionsData, setDistributionsData] = useState<DistributionsByLabelResponse | null>(null);
+  const effectiveSelectedNodes =
+    selectedNodes.length > 0 ? selectedNodes : predicateMatchNodes;
+
+  const [distributionsData, setDistributionsData] =
+    useState<DistributionsByLabelResponse | null>(null);
   const [distLoading, setDistLoading] = useState(true);
   const [nodeTypeFilter, setNodeTypeFilter] = useState<string[]>([]);
 
@@ -927,7 +985,7 @@ export const AttributePanel = () => {
         }
       } catch (error) {
         if (!isAbortedRequest(error) && !signal?.aborted) {
-          console.error("Failed to fetch distributions:", error);
+          void error;
         }
       } finally {
         if (!signal?.aborted) {
@@ -958,20 +1016,21 @@ export const AttributePanel = () => {
     (nodeIds: string[]) => {
       setSelection(nodeIds, "attribute");
     },
-    [setSelection]
+    [setSelection],
   );
 
   const handleAddFilter = useCallback(
     (predicate: GeneratedPredicate) => {
       savePredicateDirect(predicate);
     },
-    [savePredicateDirect]
+    [savePredicateDirect],
   );
 
   const sortedLabels = useMemo(() => {
     if (!distributionsData?.distributions_by_label) return [];
-    return Object.entries(distributionsData.distributions_by_label)
-      .sort(([, a], [, b]) => b.label_count - a.label_count);
+    return Object.entries(distributionsData.distributions_by_label).sort(
+      ([, a], [, b]) => b.label_count - a.label_count,
+    );
   }, [distributionsData]);
 
   const filteredLabels = useMemo(() => {
@@ -983,36 +1042,35 @@ export const AttributePanel = () => {
     return sortedLabels.map(([label]) => label);
   }, [sortedLabels]);
 
-  const handleNodeTypeToggle = useCallback((nodeType: string, shiftKey: boolean = false) => {
-    if (shiftKey) {
-      // Shift+click: Create node type predicate directly
-      const predicate: GeneratedPredicate = {
-        id: `node_type_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-        attribute: "node_type",
-        operator: "=",
-        value: nodeType,
-        match_count: sortedLabels.find(([label]) => label === nodeType)?.[1]?.label_count || 0,
-        precision: 1,
-        recall: 1,
-        f1_score: 1,
-        is_structural: false,
-        attribute_type: "categorical",
-        label_scope: undefined,
-      };
-      handleAddFilter(predicate);
-    } else {
-      // Regular click: Toggle filter
-      setNodeTypeFilter(prev =>
-        prev.includes(nodeType)
-          ? prev.filter(t => t !== nodeType)
-          : [...prev, nodeType]
-      );
-    }
-  }, [sortedLabels, handleAddFilter]);
-
-  const handleSelectAllTypes = useCallback(() => {
-    setNodeTypeFilter(availableNodeTypes);
-  }, [availableNodeTypes]);
+  const handleNodeTypeToggle = useCallback(
+    (nodeType: string, shiftKey: boolean = false) => {
+      if (shiftKey) {
+        const predicate: GeneratedPredicate = {
+          id: `node_type_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          attribute: "node_type",
+          operator: "=",
+          value: nodeType,
+          match_count:
+            sortedLabels.find(([label]) => label === nodeType)?.[1]
+              ?.label_count || 0,
+          precision: 1,
+          recall: 1,
+          f1_score: 1,
+          is_structural: false,
+          attribute_type: "categorical",
+          label_scope: undefined,
+        };
+        handleAddFilter(predicate);
+      } else {
+        setNodeTypeFilter((prev) =>
+          prev.includes(nodeType)
+            ? prev.filter((t) => t !== nodeType)
+            : [...prev, nodeType],
+        );
+      }
+    },
+    [sortedLabels, handleAddFilter],
+  );
 
   const handleClearTypeFilter = useCallback(() => {
     setNodeTypeFilter([]);
@@ -1023,112 +1081,56 @@ export const AttributePanel = () => {
   }, [distributionsData]);
 
   const hasLabels = sortedLabels.length > 0;
-  const hasSharedAttrs = distributionsData?.shared_attributes && Object.keys(distributionsData.shared_attributes).length > 0;
+  const hasSharedAttrs =
+    distributionsData?.shared_attributes &&
+    Object.keys(distributionsData.shared_attributes).length > 0;
   const hasFilteredResults = filteredLabels.length > 0;
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-white">
-      <div className="shrink-0 px-4 py-3 border-b border-gray-100">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <svg
-                className="w-4 h-4 text-gray-600"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-gray-800">
-                Attribute Space
-              </h2>
-              <p className="text-[10px] text-gray-500">
-                Explore node attributes
-              </p>
-            </div>
-          </div>
+      {showHeader && (
+        <PanelHeader
+          icon={<AttributeIcon className="w-4 h-4 text-gray-600" />}
+          title="Attribute Space"
+          subtitle="Explore node properties"
+        />
+      )}
 
-          
-          <div className="flex border border-gray-200 rounded p-0.5 bg-gray-50">
-            <button
-              onClick={() => setActiveTab("attributes")}
-              className={`px-2 py-1 text-[10px] font-medium rounded transition-all duration-150 ${
-                activeTab === "attributes"
-                  ? "bg-white text-gray-800 shadow-sm"
-                  : "text-gray-600 hover:text-gray-800 hover:bg-gray-100"
-              }`}
-            >
-              Attrs
-            </button>
-            <button
-              onClick={() => setActiveTab("umap")}
-              className={`px-2 py-1 text-[10px] font-medium rounded transition-all duration-150 ${
-                activeTab === "umap"
-                  ? "bg-white text-gray-800 shadow-sm"
-                  : "text-gray-600 hover:text-gray-800 hover:bg-gray-100"
-              }`}
-            >
-              UMAP
-            </button>
-          </div>
-        </div>
-      </div>
-
-      
-      {activeTab === "attributes" && hasLabels && (
-        <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-gray-50/50">
-          <div className="space-y-3">
+      {hasLabels && (
+        <div className="shrink-0 px-4 py-2.5 border-b border-gray-100 bg-gray-50/30">
+          <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium text-gray-700">
-                Filter by node type
+              <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                Node Types
               </span>
-              <div className="flex gap-1">
-                {nodeTypeFilter.length > 0 && nodeTypeFilter.length < availableNodeTypes.length && (
-                  <button
-                    onClick={handleSelectAllTypes}
-                    className="text-[9px] text-gray-500 hover:text-gray-700 underline px-1"
-                  >
-                    select all
-                  </button>
-                )}
-                {nodeTypeFilter.length > 0 && (
-                  <button
-                    onClick={handleClearTypeFilter}
-                    className="text-[9px] text-gray-500 hover:text-gray-700 underline px-1"
-                  >
-                    clear
-                  </button>
-                )}
-              </div>
+              {nodeTypeFilter.length > 0 && (
+                <button
+                  onClick={handleClearTypeFilter}
+                  className="text-[9px] text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  Reset
+                </button>
+              )}
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
-              {availableNodeTypes.map(nodeType => {
+            <div className="flex flex-wrap gap-1">
+              {availableNodeTypes.map((nodeType) => {
                 const isFilterActive = nodeTypeFilter.length > 0;
                 const isSelected = nodeTypeFilter.includes(nodeType);
-                const colors = getLabelColor(nodeType);
                 const topologyColor = getTopologyColor(nodeType);
 
                 return (
                   <button
                     key={nodeType}
                     onClick={(e) => handleNodeTypeToggle(nodeType, e.shiftKey)}
-                    className={`text-[9px] px-2 py-1 rounded transition-all duration-150 font-medium border flex items-center gap-1.5 ${
+                    className={`text-[9px] px-2 py-1 rounded-md transition-all font-medium flex items-center gap-1.5 ${
                       isFilterActive && isSelected
-                        ? `${colors.bg} ${colors.text} border-current`
+                        ? "bg-gray-800 text-white"
                         : isFilterActive && !isSelected
-                        ? 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
-                        : 'bg-gray-50 text-gray-700 border-gray-200 opacity-50 hover:opacity-100'
+                          ? "bg-white text-gray-400 border border-gray-200 hover:text-gray-600"
+                          : "bg-white text-gray-600 border border-gray-200 hover:border-gray-300"
                     }`}
-                    title={`${nodeType} (shift-click to add as predicate)`}
+                    title={`${nodeType} (shift-click to add as filter)`}
                   >
                     <div
                       className="w-2 h-2 rounded-full flex-shrink-0"
@@ -1141,113 +1143,70 @@ export const AttributePanel = () => {
             </div>
 
             {nodeTypeFilter.length > 0 && (
-              <div className="text-[9px] text-gray-500">
-                Showing {filteredLabels.length} of {availableNodeTypes.length} node types
-              </div>
+              <p className="text-[9px] text-gray-400">
+                {filteredLabels.length} of {availableNodeTypes.length} types
+              </p>
             )}
           </div>
         </div>
       )}
 
-      
-      {activeTab === "attributes" ? (
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-          <div className="p-4 space-y-4 overflow-hidden">
-            {distLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin h-5 w-5 border-2 border-gray-300 border-t-gray-600 rounded-full" />
-              </div>
-            ) : !hasLabels && !hasSharedAttrs ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="p-4 bg-gray-100 rounded-full mb-4">
-                  <svg
-                    className="w-8 h-8 text-gray-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                    />
-                  </svg>
-                </div>
-                <p className="text-sm text-gray-600 font-semibold mb-1">
-                  No attributes available
-                </p>
-                <p className="text-xs text-gray-500">
-                  Load a graph with node attributes to explore
-                </p>
-              </div>
-            ) : nodeTypeFilter.length > 0 && !hasFilteredResults ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="p-4 bg-gray-100 rounded-full mb-4">
-                  <svg
-                    className="w-8 h-8 text-gray-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"
-                    />
-                  </svg>
-                </div>
-                <p className="text-sm text-gray-600 font-semibold mb-1">
-                  No matching node types
-                </p>
-                <p className="text-xs text-gray-500">
-                  Try adjusting your node type filter
-                </p>
-              </div>
-            ) : (
-              <>
-                {filteredLabels.map(([label, labelData]) => (
-                  <LabelSection
-                    key={label}
-                    label={label}
-                    labelData={labelData}
-                    selectedNodes={selectedNodes}
-                    onSelectNodes={handleSelectNodes}
-                    onCreatePredicate={handleAddFilter}
-                  />
-                ))}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <div className="p-3 space-y-3">
+          {distLoading ? (
+            <LoadingSkeleton />
+          ) : !hasLabels && !hasSharedAttrs ? (
+            <EmptyState
+              icon={<AttributeIcon className="w-4 h-4 text-gray-600" />}
+              title="No attributes available"
+              subtitle="Load a graph with node attributes to explore"
+            />
+          ) : nodeTypeFilter.length > 0 && !hasFilteredResults ? (
+            <EmptyState
+              icon={<AttributeIcon className="w-4 h-4 text-gray-600" />}
+              title="No matching types"
+              subtitle="Try adjusting your filter"
+            />
+          ) : (
+            <>
+              {filteredLabels.map(([label, labelData]) => (
+                <LabelSection
+                  key={label}
+                  label={label}
+                  labelData={labelData}
+                  selectedNodes={effectiveSelectedNodes}
+                  onSelectNodes={handleSelectNodes}
+                  onCreatePredicate={handleAddFilter}
+                />
+              ))}
 
-                {(nodeTypeFilter.length === 0 || hasFilteredResults) && hasSharedAttrs && distributionsData && (
+              {(nodeTypeFilter.length === 0 || hasFilteredResults) &&
+                hasSharedAttrs &&
+                distributionsData && (
                   <SharedAttributesSection
                     sharedAttributes={distributionsData.shared_attributes}
-                    selectedNodes={selectedNodes}
+                    selectedNodes={effectiveSelectedNodes}
                     onSelectNodes={handleSelectNodes}
                     onCreatePredicate={handleAddFilter}
                   />
                 )}
-              </>
-            )}
-          </div>
+            </>
+          )}
         </div>
-      ) : (
-        <div className="flex-1 min-h-0">
-          <UmapVisualization />
-        </div>
-      )}
+      </div>
 
       {selectedNodes.length > 0 && (
-        <div className="shrink-0 px-4 py-3 border-t border-gray-200 bg-gray-50/80">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600 font-medium">
-              <span className="font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">
+        <div className="shrink-0 px-4 py-2.5 border-t border-gray-100 bg-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded">
                 {selectedNodes.length}
-              </span>{" "}
-              nodes selected
-            </span>
+              </span>
+              <span className="text-[10px] text-gray-500">nodes selected</span>
+            </div>
             <button
               onClick={() => setSelection([], null)}
-              className="text-gray-500 hover:text-gray-700 hover:bg-gray-200 px-2 py-1 rounded transition-all duration-150 font-medium text-[11px]"
+              className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
             >
               Clear
             </button>
@@ -1257,3 +1216,39 @@ export const AttributePanel = () => {
     </div>
   );
 };
+
+const LoadingSkeleton = () => (
+  <div className="space-y-3">
+    {[1, 2, 3].map((i) => (
+      <div key={i} className="rounded-xl border border-gray-100 bg-white p-3">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-2.5 h-2.5 rounded-full bg-gray-200 animate-pulse" />
+          <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+          <div className="h-4 w-8 bg-gray-100 rounded animate-pulse" />
+        </div>
+        <div className="space-y-2">
+          <div className="h-8 bg-gray-50 rounded animate-pulse" />
+          <div className="h-3 w-full bg-gray-50 rounded animate-pulse" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+const EmptyState = ({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+}) => (
+  <div className="flex flex-col items-center justify-center py-12 text-center">
+    <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+      {icon}
+    </div>
+    <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
+    <p className="text-xs text-gray-400 max-w-[200px]">{subtitle}</p>
+  </div>
+);

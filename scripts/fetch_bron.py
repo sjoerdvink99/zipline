@@ -7,7 +7,7 @@ from datetime import datetime
 
 def download_mitre_attack():
     url = "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json"
-    response = requests.get(url, timeout=30)
+    response = requests.get(url, timeout=(10, 120))  # (connect_timeout, read_timeout)
     response.raise_for_status()
     return response.json()
 
@@ -41,7 +41,8 @@ def process_attack_pattern(obj, id_mapping):
     return {
         'id': node_id,
         'label': f"{mitre_id}: {obj.get('name', 'Unknown')}",
-        'type': 'technique',
+        'display_name': f"{mitre_id}: {obj.get('name', 'Unknown')}",
+        'node_type': 'technique',
         'mitre_id': mitre_id,
         'name': obj.get('name', 'Unknown'),
         'description': obj.get('description', ''),
@@ -67,7 +68,8 @@ def process_intrusion_set(obj, id_mapping):
     return {
         'id': node_id,
         'label': obj.get('name', 'Unknown Group'),
-        'type': 'apt_group',
+        'display_name': obj.get('name', 'Unknown Group'),
+        'node_type': 'apt_group',
         'mitre_id': mitre_id,
         'name': obj.get('name', 'Unknown Group'),
         'description': obj.get('description', ''),
@@ -92,7 +94,8 @@ def process_malware_or_tool(obj, id_mapping):
     return {
         'id': node_id,
         'label': obj.get('name', 'Unknown Software'),
-        'type': software_type,
+        'display_name': obj.get('name', 'Unknown Software'),
+        'node_type': software_type,
         'mitre_id': mitre_id,
         'name': obj.get('name', 'Unknown Software'),
         'description': obj.get('description', ''),
@@ -119,7 +122,8 @@ def process_mitigation(obj, id_mapping):
     return {
         'id': node_id,
         'label': f"{mitre_id}: {obj.get('name', 'Unknown')}",
-        'type': 'mitigation',
+        'display_name': f"{mitre_id}: {obj.get('name', 'Unknown')}",
+        'node_type': 'mitigation',
         'mitre_id': mitre_id,
         'name': obj.get('name', 'Unknown'),
         'description': obj.get('description', ''),
@@ -142,7 +146,8 @@ def process_campaign(obj, id_mapping):
     return {
         'id': node_id,
         'label': obj.get('name', 'Unknown Campaign'),
-        'type': 'campaign',
+        'display_name': obj.get('name', 'Unknown Campaign'),
+        'node_type': 'campaign',
         'mitre_id': mitre_id,
         'name': obj.get('name', 'Unknown Campaign'),
         'description': obj.get('description', ''),
@@ -167,11 +172,17 @@ def process_relationship(obj, id_mapping):
     if not source_node or not target_node or source_node == target_node:
         return None
 
+    relationship_type = obj.get('relationship_type', 'related')
+
+    # Use the relationship type directly from MITRE ATT&CK STIX data.
+    # STIX semantics for "uses": apt_group --[uses]--> technique/malware/tool
+    # Do NOT reverse edges — the source data direction is correct and meaningful.
     return {
         'source': source_node,
         'target': target_node,
-        'label': obj.get('relationship_type', 'related'),
-        'relationship_type': obj.get('relationship_type', 'related'),
+        'label': relationship_type,
+        'relationship_type': relationship_type,
+        'edge_type': relationship_type,
         'description': obj.get('description', ''),
         'created': obj.get('created', '')
     }
@@ -214,7 +225,7 @@ def create_mitre_attack_dataset():
 def create_dataset_metadata(nodes, relationships):
     node_counts = defaultdict(int)
     for node in nodes:
-        node_counts[node['type']] += 1
+        node_counts[node['node_type']] += 1
 
     return {
         "name": "MITRE ATT&CK Enterprise Dataset",
@@ -237,7 +248,56 @@ def create_dataset_metadata(nodes, relationships):
 
 def main():
     try:
+        print("Downloading MITRE ATT&CK Enterprise data...")
         nodes, relationships = create_mitre_attack_dataset()
+
+        # Validation and statistics
+        node_types = defaultdict(int)
+        for node in nodes:
+            node_types[node['node_type']] += 1
+
+        relationship_types = defaultdict(int)
+        for rel in relationships:
+            relationship_types[rel['relationship_type']] += 1
+
+        print(f"\nDataset Statistics:")
+        print(f"Total nodes: {len(nodes)}")
+        print(f"Node breakdown:")
+        for node_type, count in sorted(node_types.items()):
+            print(f"  {node_type}: {count}")
+
+        print(f"\nTotal relationships: {len(relationships)}")
+        print(f"Relationship breakdown:")
+        for rel_type, count in sorted(relationship_types.items()):
+            print(f"  {rel_type}: {count}")
+
+        # Validate key relationships exist
+        # STIX direction: apt_group --[uses]--> technique (source = APT, target = technique)
+        apt_technique_rels = [r for r in relationships if r['source'].startswith('apt_') and r['target'].startswith('technique_') and r['relationship_type'] == 'uses']
+        print(f"\nKey validations:")
+        print(f"APT->Technique 'uses' relationships: {len(apt_technique_rels)}")
+
+        # Check for specific APT groups
+        apt28_found = any(n['id'] == 'apt_G0007' for n in nodes)
+        apt30_found = any(n['id'] == 'apt_G0013' for n in nodes)
+        print(f"APT28 (G0007) found: {apt28_found}")
+        print(f"APT30 (G0013) found: {apt30_found}")
+
+        # Remove isolated nodes (nodes with no edges)
+        connected_ids: set[str] = set()
+        for rel in relationships:
+            connected_ids.add(rel["source"])
+            connected_ids.add(rel["target"])
+
+        isolated = [n for n in nodes if n["id"] not in connected_ids]
+        if isolated:
+            iso_types = defaultdict(int)
+            for n in isolated:
+                iso_types[n["node_type"]] += 1
+            print(f"\nRemoving {len(isolated)} isolated nodes: {dict(iso_types)}")
+            nodes = [n for n in nodes if n["id"] in connected_ids]
+
+        # Metadata is computed after isolated node removal so counts are accurate
         metadata = create_dataset_metadata(nodes, relationships)
 
         dataset = {
@@ -252,8 +312,8 @@ def main():
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(dataset, f, indent=2, ensure_ascii=False)
 
-        print(f"Dataset created: {len(nodes)} nodes, {len(relationships)} relationships")
-        print(f"Output: {output_file}")
+        print(f"\nOutput: {output_file}")
+        print("Dataset creation completed successfully!")
 
         return dataset
 
