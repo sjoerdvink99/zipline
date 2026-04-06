@@ -2,6 +2,15 @@ import api from "./client";
 
 const BASE = "/api/predicates/learn";
 
+export interface NeighborhoodSpec {
+  quantifier?: string;
+  count?: number;
+  path_str?: string;
+  k_hops?: number;
+  base_literal_attribute?: string;
+  base_literal_value?: string;
+}
+
 export interface LiteralInfo {
   type: string;
   attribute: string;
@@ -9,6 +18,7 @@ export interface LiteralInfo {
   value: string | number | boolean;
   coverage: number;
   precision: number;
+  neighborhood_spec?: NeighborhoodSpec;
 }
 
 export interface LearnedPredicate {

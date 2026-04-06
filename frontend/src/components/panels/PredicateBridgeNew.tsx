@@ -2,20 +2,13 @@ import { useState, useCallback, memo } from "react";
 import { useAnalysisStore } from "../../store/analysisStore";
 import { VisualPredicateBuilder } from "../predicate-builder/visual";
 import { LearnedPredicatesPanel } from "../predicate-builder/learning";
-import { highlightFOL } from "../../utils/folHighlight";
+import { literalToChip } from "../../utils/predicateToHuman";
+import { ClauseChip } from "../predicate-builder/learning/ClauseChip";
 
 interface PredicateBridgeProps {
   selectedNodeIds: string[];
   onPredicateFilter?: (predicates: string[], operator: "and" | "or") => void;
 }
-
-const OPERATOR_SYMBOLS: Record<string, string> = {
-  ">=": "≥",
-  "<=": "≤",
-  "!=": "≠",
-};
-
-const toUnicodeOp = (op: string) => OPERATOR_SYMBOLS[op] ?? op;
 
 const CoverageBar = memo(function CoverageBar({
   value,
@@ -41,14 +34,18 @@ const CoverageBar = memo(function CoverageBar({
 
 const SuggestedCard = memo(function SuggestedCard({
   space,
-  expr,
+  attribute,
+  operator,
+  value,
   nodeCount,
   coverage,
   matchingNodes,
   dragData,
 }: {
   space: "topology" | "attribute";
-  expr: string;
+  attribute: string;
+  operator: string;
+  value: string | number | boolean;
   nodeCount: number;
   coverage: number;
   matchingNodes: string[];
@@ -57,6 +54,15 @@ const SuggestedCard = memo(function SuggestedCard({
   const { setHighlightedNodes, clearHighlights } = useAnalysisStore();
   const [isDragging, setIsDragging] = useState(false);
   const isTopo = space === "topology";
+
+  const chip = literalToChip({
+    type: isTopo ? "topology" : "attribute",
+    attribute,
+    operator,
+    value,
+    coverage: 0,
+    precision: 0,
+  });
 
   return (
     <div
@@ -69,23 +75,15 @@ const SuggestedCard = memo(function SuggestedCard({
       onDragEnd={() => setIsDragging(false)}
       onMouseEnter={() => setHighlightedNodes(matchingNodes)}
       onMouseLeave={clearHighlights}
-      className={`group/card rounded-lg border transition-all duration-150 cursor-grab active:cursor-grabbing ${
+      className={`rounded-lg border transition-all duration-150 cursor-grab active:cursor-grabbing ${
         isDragging
           ? `${isTopo ? "border-sky-300 bg-sky-50/50" : "border-emerald-300 bg-emerald-50/50"} opacity-60 scale-[0.98]`
           : `bg-white border-gray-100 ${isTopo ? "hover:border-sky-200" : "hover:border-emerald-200"} hover:shadow-sm`
       }`}
     >
       <div className="px-3 py-2 flex items-center gap-2">
-        <span
-          className={`text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide shrink-0 ${
-            isTopo
-              ? "text-sky-600 bg-sky-50 border border-sky-100"
-              : "text-emerald-600 bg-emerald-50 border border-emerald-100"
-          }`}
-        >
-          {isTopo ? "topo" : "attr"}
-        </span>
-        <div className="flex-1 min-w-0">{highlightFOL(expr)}</div>
+        <ClauseChip chip={chip} />
+        <div className="flex-1" />
         <span className="text-[10px] text-gray-300 tabular-nums shrink-0">
           {nodeCount}
         </span>
@@ -103,8 +101,8 @@ const SuggestedCard = memo(function SuggestedCard({
 const PredicateSkeleton = () => (
   <div className="rounded-lg border border-gray-100 bg-white">
     <div className="px-3 py-2.5 flex items-center gap-2">
-      <div className="h-4 w-9 bg-gray-50 rounded animate-pulse shrink-0" />
-      <div className="flex-1 h-4 bg-gray-50 rounded animate-pulse" />
+      <div className="h-6 w-28 bg-gray-50 rounded-md animate-pulse shrink-0" />
+      <div className="flex-1" />
       <div className="h-3 w-5 bg-gray-50 rounded animate-pulse shrink-0" />
     </div>
     <div className="px-3 pb-2">
@@ -182,7 +180,6 @@ export function PredicateBridge({
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-gray-50/30">
-
       <div className="shrink-0 px-4 py-4 bg-white border-b border-gray-100">
         <VisualPredicateBuilder
           onEvaluate={handleEvaluate}
@@ -241,16 +238,16 @@ export function PredicateBridge({
               ) : (
                 <div className="space-y-2">
                   {topologyPredicates.map((pred, i) => {
-                    const threshold = pred.value;
-                    const expr = typeof threshold === "string"
-                      ? `${pred.attribute}(x) ${toUnicodeOp(pred.operator)} "${threshold}"`
-                      : `${pred.attribute}(x) ${toUnicodeOp(pred.operator)} ${Number(threshold) < 1 ? Number(threshold).toFixed(3) : Number(threshold).toFixed(0)}`;
-                    const coverage = pred.applicable_nodes.length / Math.max(selectedNodeIds.length, 1);
+                    const coverage =
+                      pred.applicable_nodes.length /
+                      Math.max(selectedNodeIds.length, 1);
                     return (
                       <SuggestedCard
                         key={`topo-${i}`}
                         space="topology"
-                        expr={expr}
+                        attribute={pred.attribute}
+                        operator={pred.operator}
+                        value={pred.value}
                         nodeCount={pred.applicable_nodes.length}
                         coverage={coverage}
                         matchingNodes={pred.applicable_nodes}
@@ -268,18 +265,16 @@ export function PredicateBridge({
                   })}
 
                   {attributePredicates.map((pred, i) => {
-                    const op = toUnicodeOp(pred.operator || "=");
-                    const val =
-                      typeof pred.value === "string"
-                        ? `"${pred.value}"`
-                        : String(pred.value);
-                    const expr = `${pred.attribute}(x) ${op} ${val}`;
-                    const coverage = pred.applicable_nodes.length / Math.max(selectedNodeIds.length, 1);
+                    const coverage =
+                      pred.applicable_nodes.length /
+                      Math.max(selectedNodeIds.length, 1);
                     return (
                       <SuggestedCard
                         key={`attr-${i}`}
                         space="attribute"
-                        expr={expr}
+                        attribute={pred.attribute}
+                        operator={pred.operator || "="}
+                        value={pred.value}
                         nodeCount={pred.applicable_nodes.length}
                         coverage={coverage}
                         matchingNodes={pred.applicable_nodes}

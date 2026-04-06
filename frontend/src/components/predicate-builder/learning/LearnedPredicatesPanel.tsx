@@ -26,18 +26,7 @@ const literalToPill = (
 
   if (literal.type === "neighborhood") {
     const neighborhoodBlock = createNeighborhood(variable);
-    const spec = (
-      literal as LiteralInfo & {
-        neighborhood_spec?: {
-          quantifier?: string;
-          count?: number;
-          path_str?: string;
-          k_hops?: number;
-          base_literal_attribute?: string;
-          base_literal_value?: string;
-        };
-      }
-    ).neighborhood_spec;
+    const spec = literal.neighborhood_spec;
     if (spec) {
       if (spec.quantifier === "exists") {
         neighborhoodBlock.quantifier = "∃";
@@ -129,6 +118,7 @@ export const LearnedPredicatesPanel = memo(function LearnedPredicatesPanel({
     learnedPredicates = [],
     isLearning,
     learningTimeMs,
+    selectionSize,
     error,
     quickLearn: doQuickLearn,
     clearLearned,
@@ -296,6 +286,7 @@ export const LearnedPredicatesPanel = memo(function LearnedPredicatesPanel({
               key={i}
               predicate={pred}
               rank={i + 1}
+              selectionSize={selectionSize}
               isFavorite={favoritedClauses.some(
                 (c) => c.predicate.fol_expression === pred.fol_expression,
               )}
